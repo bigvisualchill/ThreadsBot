@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Media Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e1e5e9;
+            margin-bottom: 30px;
+        }
+
+        .tab {
+            padding: 15px 25px;
+            background: none;
+            border: none;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #6b7280;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.95rem;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="password"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: #ffffff;
+            box-sizing: border-box;
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group input[type="password"]:focus,
+        .form-group input[type="number"]:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group input[type="text"]::placeholder,
+        .form-group input[type="password"]::placeholder,
+        .form-group textarea::placeholder {
+            color: #9ca3af;
+            font-style: italic;
+        }
+
+        .form-group select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 12px center;
+            background-repeat: no-repeat;
+            background-size: 16px;
+            padding-right: 40px;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 6px;
+            color: #6b7280;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        .checkbox-group {
+            margin-bottom: 25px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+            cursor: pointer;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+            border: 2px solid #e5e7eb;
+        }
+
+        .btn-secondary:hover {
+            background: #e5e7eb;
+            border-color: #d1d5db;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .status {
+            margin-top: 25px;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            min-height: 60px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .tips {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .tips h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+
+        .tips ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .tips li {
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .tips li:before {
+            content: "•";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
+        }
+
+        .section h3 {
+            margin-top: 0;
+            margin-bottom: 25px;
+            color: #1f2937;
+            font-size: 1.3rem;
+            font-weight: 700;
+            border-bottom: 2px solid #f3f4f6;
+            padding-bottom: 12px;
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .ai-section {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+        }
+
+        .ai-section h3 {
+            color: white;
+        }
+
+        .session-management {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .session-management h3 {
+            margin-top: 0;
+            color: #495057;
+            font-size: 1.1rem;
+        }
+
+        .session-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .session-actions .btn {
+            flex: 1;
+        }
+
+        .status-message {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .status-message.info {
+            background: #e2e3e5;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+
+        @media (max-width: 768px) {
+            .row {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .tabs {
+                flex-direction: column;
+            }
+
+            .tab {
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Social Media Bot</h1>
+            <p>Automate your social media interactions with AI-powered intelligence</p>
+        </div>
+        
+        <div class="content">
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab active" data-tab="login">🔐 Login & Setup</button>
+                <button class="tab" data-tab="auto-comment">🤖 Auto Comment</button>
+            </div>
+
+            <!-- Login Tab -->
+            <div id="login" class="tab-content active">
+                <div class="tips">
+                    <h3>💡 Login Tips</h3>
+                    <ul>
+                        <li>Login once and your session will be saved automatically</li>
+                        <li>Use headful mode for login to handle 2FA if needed</li>
+                        <li>You can manage multiple sessions with different names</li>
+                        <li>Check your login status before running auto-comments</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+          <label for="platform">Platform:</label>
+          <select id="platform" name="platform" required>
+            <option value="">Select Platform</option>
+            <option value="instagram">Instagram</option>
+            <option value="x">X (Twitter)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sessionName">Account Name:</label>
+          <input type="text" id="sessionName" name="sessionName" placeholder="e.g., my_instagram_account" required>
+          <small>Give this account a name to save your login</small>
+        </div>
+
+        <div class="form-group">
+          <label for="username">Username:</label>
+          <input type="text" id="username" name="username" placeholder="your_username">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password:</label>
+          <input type="password" id="password" name="password" placeholder="your_password">
+        </div>
+
+        <div class="form-group">
+          <label for="headful">Show Browser:</label>
+          <input type="checkbox" id="headful" name="headful">
+          <small>Check to see the browser while it works</small>
+        </div>
+
+        <div class="form-group">
+          <label for="dryRun">Dry Run:</label>
+          <input type="checkbox" id="dryRun" name="dryRun">
+          <small>Test without actually performing actions</small>
+        </div>
+
+        <div class="form-group">
+          <button type="button" id="loginBtn" class="btn btn-primary">Login & Save Session</button>
+        </div>
+
+        <!-- Session Management Section -->
+        <div class="session-management">
+          <h3>📱 Your Logged-In Accounts</h3>
+          <div class="form-group">
+            <label for="activeSession">Select Active Account:</label>
+            <select id="activeSession" name="activeSession">
+              <option value="">No accounts logged in</option>
+            </select>
+            <small>Choose which account to use for actions</small>
+          </div>
+          
+          <div class="session-actions">
+            <button type="button" id="checkSessionBtn" class="btn btn-secondary">Check Status</button>
+            <button type="button" id="logoutBtn" class="btn btn-danger">Logout Selected</button>
+          </div>
+          
+          <div id="sessionStatus" class="status-message"></div>
+        </div>
+            </div>
+
+            <!-- Auto Comment Tab -->
+            <div id="auto-comment" class="tab-content">
+                <div class="tips">
+                    <h3>💡 Auto-Comment Tips</h3>
+                    <ul>
+                        <li>Make sure you're logged in before running auto-comments</li>
+                        <li>Use AI for intelligent, contextual comments</li>
+                        <li>Start with a small number of posts to test</li>
+                        <li>Use dry-run first to see what would happen</li>
+                    </ul>
+                </div>
+
+                <div class="section" id="searchSection">
+                    <h3>🎯 Target Selection</h3>
+                    <div class="row">
+                        <div class="form-group">
+                            <label for="autoActiveSession">Account to Use</label>
+                            <select id="autoActiveSession">
+                                <option value="">Select an account</option>
+                            </select>
+                            <small>Choose which logged-in account to use</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="action">Action Type</label>
+                            <select id="action">
+                                <option value="like">❤️ Like Posts</option>
+                                <option value="comment">💬 Comment on Posts</option>
+                                <option value="auto-comment">🤖 Auto-Comment Multiple Posts</option>
+                                <option value="discover">🔍 Discover Posts Only</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="form-group">
+                            <label for="maxPosts">Max Posts</label>
+                            <input type="number" id="maxPosts" value="5" min="1" max="50">
+                            <small>Number of posts to interact with</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="platform">Platform</label>
+                            <select id="autoPlatform">
+                                <option value="instagram">Instagram</option>
+                                <option value="x">X (Twitter)</option>
+                            </select>
+                            <small>Which platform to use</small>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="form-group">
+                            <label for="hashtag">Hashtag</label>
+                            <input type="text" id="hashtag" placeholder="#fitness #motivation">
+                            <small>Search for posts with these hashtags</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="keywords">Keywords</label>
+                            <input type="text" id="keywords" placeholder="workout, gym, fitness">
+                            <small>Or search by keywords in post content</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section" id="aiSection">
+                    <h3>🤖 AI-Powered Comments</h3>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="useAI">
+                            <span>Use AI to generate comments</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="aiContext">AI Context (optional)</label>
+                        <textarea id="aiContext" class="form-control" rows="2" 
+                                  placeholder="Additional context for AI: 'I'm a fitness coach', 'Keep it casual', etc."></textarea>
+                    </div>
+                </div>
+
+                <div class="section" id="commentSection">
+                    <h3>💬 Comment Settings</h3>
+                    <div class="form-group">
+                        <label for="comment">Manual Comment (if not using AI)</label>
+                        <textarea id="comment" class="form-control" rows="3" 
+                                  placeholder="Enter your comment here... (or use AI above)"></textarea>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>⚙️ Options</h3>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="autoHeadful">
+                            <span>Headful Mode (show browser)</span>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="autoDryRun">
+                            <span>Dry Run (test only)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button id="runBtn" class="btn">🚀 Run Action</button>
+            </div>
+
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        const el = id => document.getElementById(id);
+        const status = el('status');
+        const btn = el('runBtn');
+
+        // Tab functionality
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+            
+            // Update UI after tab switch
+            setTimeout(updateUI, 50); // Small delay to ensure DOM is updated
+        }
+
+        // Add click listeners to tabs
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                switchTab(e.target.dataset.tab);
+            });
+        });
+
+        function updateStatus(message, type = 'info') {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        // Update UI based on form values
+        function updateUI() {
+            const activeTab = document.querySelector('.tab.active')?.getAttribute('data-tab');
+            
+            // Show/hide sections based on active tab
+            if (activeTab === 'login') {
+                // Hide auto-comment sections when on login tab
+                const searchSection = document.getElementById('searchSection');
+                const aiSection = document.getElementById('aiSection');
+                const commentSection = document.getElementById('commentSection');
+                
+                if (searchSection) searchSection.style.display = 'none';
+                if (aiSection) aiSection.style.display = 'none';
+                if (commentSection) commentSection.style.display = 'none';
+            } else if (activeTab === 'auto-comment') {
+                // Show auto-comment sections when on auto-comment tab
+                const searchSection = document.getElementById('searchSection');
+                const aiSection = document.getElementById('aiSection');
+                const commentSection = document.getElementById('commentSection');
+                
+                if (searchSection) searchSection.style.display = 'block';
+                if (aiSection) aiSection.style.display = 'block';
+                if (commentSection) commentSection.style.display = 'block';
+                
+                // Update visibility based on form values
+                const action = document.getElementById('action')?.value;
+                const useAI = document.getElementById('useAI')?.checked;
+                
+                if (aiSection) {
+                    aiSection.style.display = 'block'; // Always show AI section
+                }
+                if (commentSection) {
+                    commentSection.style.display = (action === 'comment' || action === 'auto-comment') ? 'block' : 'block'; // Always show for now
+                }
+            }
+            
+            // Update session dropdown
+            updateSessionDropdown();
+        }
+
+        // Update session dropdown with available sessions
+        function updateSessionDropdown() {
+            const loginDropdown = document.getElementById('activeSession');
+            const autoDropdown = document.getElementById('autoActiveSession');
+            const sessions = getAvailableSessions();
+            
+            // Update login tab dropdown
+            if (loginDropdown) {
+                loginDropdown.innerHTML = '';
+                if (sessions.length === 0) {
+                    loginDropdown.innerHTML = '<option value="">No accounts logged in</option>';
+                } else {
+                    loginDropdown.innerHTML = '<option value="">Select an account</option>';
+                    sessions.forEach(session => {
+                        const option = document.createElement('option');
+                        option.value = session;
+                        option.textContent = session;
+                        loginDropdown.appendChild(option);
+                    });
+                }
+            }
+            
+            // Update auto comment tab dropdown
+            if (autoDropdown) {
+                autoDropdown.innerHTML = '';
+                if (sessions.length === 0) {
+                    autoDropdown.innerHTML = '<option value="">No accounts logged in</option>';
+                } else {
+                    autoDropdown.innerHTML = '<option value="">Select an account</option>';
+                    sessions.forEach(session => {
+                        const option = document.createElement('option');
+                        option.value = session;
+                        option.textContent = session;
+                        autoDropdown.appendChild(option);
+                    });
+                }
+            }
+        }
+
+        // Get available sessions (this would typically come from the backend)
+        function getAvailableSessions() {
+            // For now, we'll check localStorage for saved sessions
+            const sessions = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('session_')) {
+                    sessions.push(key.replace('session_', ''));
+                }
+            }
+            return sessions;
+        }
+
+        // Update session status display
+        function updateSessionStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('sessionStatus');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+        }
+
+        function validateForm() {
+            const action = el('action').value;
+            const useAI = el('useAI').checked;
+            const hashtag = el('hashtag').value.trim();
+            const keywords = el('keywords').value.trim();
+            const comment = el('comment').value.trim();
+
+            if (['comment', 'auto-comment', 'discover'].includes(action) && !hashtag && !keywords) {
+                updateStatus('❌ Hashtag or keywords required for this action', 'error');
+                return false;
+            }
+
+            if (action === 'comment' && !comment && !useAI) {
+                updateStatus('❌ Comment is required for comment action (or enable AI)', 'error');
+                return false;
+            }
+
+            if (useAI && !hashtag && !keywords) {
+                updateStatus('❌ AI needs context: provide hashtag or keywords', 'error');
+                return false;
+            }
+
+            return true;
+        }
+
+        // Event listeners
+        document.getElementById('action').addEventListener('change', updateUI);
+        document.getElementById('useAI').addEventListener('change', updateUI);
+        document.getElementById('checkSessionBtn').addEventListener('click', checkSession);
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+        document.getElementById('runBtn').addEventListener('click', runAction);
+
+        // Initialize UI
+        updateUI();
+
+        // Session management functions
+        async function checkSession() {
+            const activeSession = document.getElementById('activeSession').value;
+            if (!activeSession) {
+                updateSessionStatus('Please select an account first', 'error');
+                return;
+            }
+
+            updateSessionStatus('Checking session status...', 'loading');
+            
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'check-session',
+                        platform: 'instagram', // Add platform parameter
+                        sessionName: activeSession
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.ok) {
+                    updateSessionStatus(`✅ ${activeSession} is logged in`, 'success');
+                } else {
+                    updateSessionStatus(`❌ ${activeSession} is not logged in`, 'error');
+                }
+            } catch (error) {
+                updateSessionStatus('Error checking session: ' + error.message, 'error');
+            }
+        }
+
+        async function login() {
+            const platform = document.getElementById('platform').value;
+            const sessionName = document.getElementById('sessionName').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const headful = document.getElementById('headful').checked;
+            const dryRun = document.getElementById('dryRun').checked;
+
+            if (!platform || !sessionName) {
+                updateSessionStatus('Please fill in platform and account name', 'error');
+                return;
+            }
+
+            updateSessionStatus('Logging in...', 'loading');
+            
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'login',
+                        platform,
+                        sessionName,
+                        username,
+                        password,
+                        headful,
+                        dryRun
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.ok) {
+                    updateSessionStatus(`✅ Successfully logged in as ${sessionName}`, 'success');
+                    // Save session to localStorage for dropdown
+                    localStorage.setItem(`session_${sessionName}`, JSON.stringify({ platform, username }));
+                    updateSessionDropdown();
+                    
+                    // Auto-select this session in the auto comment dropdown
+                    const autoDropdown = document.getElementById('autoActiveSession');
+                    if (autoDropdown) {
+                        autoDropdown.value = sessionName;
+                    }
+                } else {
+                    updateSessionStatus('Login failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                updateSessionStatus('Error during login: ' + error.message, 'error');
+            }
+        }
+
+        async function logout() {
+            const activeSession = document.getElementById('activeSession').value;
+            if (!activeSession) {
+                updateSessionStatus('Please select an account to logout', 'error');
+                return;
+            }
+
+            updateSessionStatus('Logging out...', 'loading');
+            
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'logout',
+                        sessionName: activeSession
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.ok) {
+                    updateSessionStatus(`✅ Successfully logged out from ${activeSession}`, 'success');
+                    // Remove from localStorage
+                    localStorage.removeItem(`session_${activeSession}`);
+                    updateSessionDropdown();
+                } else {
+                    updateSessionStatus('Logout failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                updateSessionStatus('Error during logout: ' + error.message, 'error');
+            }
+        }
+
+        // Auto-comment functionality
+        async function runAction() {
+            const activeTab = document.querySelector('.tab.active').getAttribute('data-tab');
+            
+            if (activeTab === 'login') {
+                updateStatus('Please switch to the "Auto Comment" tab to run actions', 'info');
+                return;
+            }
+
+            const activeSession = document.getElementById('autoActiveSession').value;
+            if (!activeSession) {
+                updateStatus('Please select an account to use', 'error');
+                return;
+            }
+
+            const action = document.getElementById('action').value;
+            const hashtag = document.getElementById('hashtag').value.trim();
+            const keywords = document.getElementById('keywords').value.trim();
+            const maxPosts = parseInt(document.getElementById('maxPosts').value) || 5;
+            const useAI = document.getElementById('useAI').checked;
+            const aiContext = document.getElementById('aiContext').value.trim();
+            const comment = document.getElementById('comment').value.trim();
+            const headful = document.getElementById('autoHeadful').checked;
+            const dryRun = document.getElementById('autoDryRun').checked;
+            const platform = document.getElementById('autoPlatform').value;
+
+            // Validation
+            if (!action) {
+                updateStatus('Please select an action', 'error');
+                return;
+            }
+
+            if (['discover', 'auto-comment'].includes(action) && !hashtag && !keywords) {
+                updateStatus('Please enter hashtag or keywords for search', 'error');
+                return;
+            }
+
+            if (action === 'comment' && !comment && !useAI) {
+                updateStatus('Please enter a comment or enable AI', 'error');
+                return;
+            }
+
+            if (useAI && !aiContext) {
+                updateStatus('Please enter AI context when using AI', 'error');
+                return;
+            }
+
+            updateStatus('Running action...', 'loading');
+
+            try {
+                const payload = {
+                    action,
+                    platform,
+                    sessionName: activeSession,
+                    searchCriteria: hashtag || keywords,
+                    maxPosts,
+                    useAI,
+                    aiContext,
+                    comment,
+                    headful,
+                    dryRun
+                };
+
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.ok) {
+                    if (result.dryRun) {
+                        updateStatus(`✅ Dry run completed: ${result.message}`, 'success');
+                    } else if (result.posts) {
+                        updateStatus(`✅ Found ${result.posts.length} posts: ${result.message}`, 'success');
+                    } else if (result.results) {
+                        const successCount = result.results.filter(r => r.success).length;
+                        updateStatus(`✅ Action completed: ${successCount}/${result.results.length} successful`, 'success');
+                    } else {
+                        updateStatus(`✅ ${result.message}`, 'success');
+                    }
+                } else {
+                    updateStatus(`❌ Error: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`❌ Network Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-hide status after 15 seconds
+        setInterval(() => {
+            if (status.textContent && !status.textContent.includes('Running...')) {
+                setTimeout(() => {
+                    if (!status.textContent.includes('Running...')) {
+                        status.textContent = '';
+                        status.className = 'status';
+                    }
+                }, 15000);
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

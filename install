@@ -1,0 +1,4 @@
+npm i
+cp .env.example .env
+# fill in .env
+npm start
