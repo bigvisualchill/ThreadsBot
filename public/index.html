@@ -596,11 +596,7 @@
                             <span>Use AI to generate comments</span>
                         </label>
                     </div>
-                    <div class="form-group">
-                        <label for="aiContext">AI Context (optional)</label>
-                        <textarea id="aiContext" class="form-control" rows="2" 
-                                  placeholder="Additional context for AI: 'I'm a fitness coach', 'Keep it casual', etc."></textarea>
-                    </div>
+
                 </div>
 
                 <div class="section" id="commentSection">
@@ -802,10 +798,23 @@
         document.getElementById('checkSessionBtn').addEventListener('click', checkSession);
         document.getElementById('loginBtn').addEventListener('click', login);
         document.getElementById('logoutBtn').addEventListener('click', logout);
-        document.getElementById('runBtn').addEventListener('click', runAction);
+        
+        // Add debugging to run button
+        const runBtn = document.getElementById('runBtn');
+        if (runBtn) {
+            console.log('🎯 WEB UI: Run button found, adding event listener');
+            runBtn.addEventListener('click', () => {
+                console.log('🎯 WEB UI: Run button clicked!');
+                runAction();
+            });
+        } else {
+            console.error('🎯 WEB UI: Run button not found!');
+        }
 
         // Initialize UI
+        console.log('🎯 WEB UI: Page loaded, initializing UI...');
         updateUI();
+        console.log('🎯 WEB UI: UI initialized');
 
         // Session management functions
         async function checkSession() {
@@ -930,6 +939,8 @@
                 updateStatus('Please switch to the "Auto Comment" tab to run actions', 'info');
                 return;
             }
+            
+            console.log('🎯 WEB UI: runAction called, active tab:', activeTab);
 
             const activeSession = document.getElementById('autoActiveSession').value;
             if (!activeSession) {
@@ -942,7 +953,7 @@
             const keywords = document.getElementById('keywords').value.trim();
             const maxPosts = parseInt(document.getElementById('maxPosts').value) || 5;
             const useAI = document.getElementById('useAI').checked;
-            const aiContext = document.getElementById('aiContext').value.trim();
+
             const comment = document.getElementById('comment').value.trim();
             const headful = document.getElementById('autoHeadful').checked;
             const dryRun = document.getElementById('autoDryRun').checked;
@@ -954,7 +965,7 @@
                 return;
             }
 
-            if (['discover', 'auto-comment'].includes(action) && !hashtag && !keywords) {
+            if (['discover', 'auto-comment', 'comment'].includes(action) && !hashtag && !keywords) {
                 updateStatus('Please enter hashtag or keywords for search', 'error');
                 return;
             }
@@ -964,10 +975,7 @@
                 return;
             }
 
-            if (useAI && !aiContext) {
-                updateStatus('Please enter AI context when using AI', 'error');
-                return;
-            }
+
 
             updateStatus('Running action...', 'loading');
 
@@ -979,11 +987,12 @@
                     searchCriteria: hashtag || keywords,
                     maxPosts,
                     useAI,
-                    aiContext,
                     comment,
                     headful,
                     dryRun
                 };
+
+                console.log('🎯 WEB UI: Sending payload to server:', payload);
 
                 const response = await fetch('/run', {
                     method: 'POST',

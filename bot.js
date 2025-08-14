@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import path from 'node:path';
@@ -9,6 +10,18 @@ puppeteer.use(StealthPlugin());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- TEXT HELPERS (valid replacements for :contains) ---
+function buildXPathTextMatch(tagNames = ['*'], text) {
+  const esc = JSON.stringify(text); // safe for XPath
+  const tagExpr = tagNames.length === 1 ? tagNames[0] : `*[self::${tagNames.join(' or self::')}]`;
+  return `//${tagExpr}[contains(normalize-space(.), ${esc})]`;
+}
+
+async function $xFirst(page, xpath) {
+  const nodes = await page.$x(xpath);
+  return nodes.length ? nodes[0] : null;
+}
 
 // Initialize OpenAI client (optional)
 let openai = null;
@@ -325,96 +338,109 @@ async function clickByText(page, texts) {
   return false;
 }
 
-// AI Comment Generation
-async function generateAIComment(postContent, context = '') {
+// AI Comment Generation (simplified with createAndPoll)
+async function generateAIComment(postContent) {
+  console.log('🤖 AI: Starting AI comment generation with Assistants API...');
+  console.log(`🤖 AI: Post content length: ${postContent?.length || 0}`);
+
   if (!openai) {
     throw new Error('OPENAI_API_KEY environment variable is required for AI comments');
   }
 
-  const assistantId = 'asst_2aVBUHe0mfXS4JZmU5YYf5E4';
-  
   try {
-    // Create a thread
+    const assistantId = 'asst_2aVBUHe0mfXS4JZmU5YYf5E4';
+    console.log(`🤖 AI: Using assistant ID: ${assistantId}`);
+
+    // 1) Create a thread
     const thread = await openai.beta.threads.create();
-    
-    // Add the message to the thread
-    const message = await openai.beta.threads.messages.create(thread.id, {
-      role: "user",
-      content: `Generate a natural, engaging comment for this social media post. The comment should be:
-- 2-3 sentences maximum
-- Friendly and supportive
-- Relevant to the post content
-- Not overly promotional
-- Authentic and human-like
+    console.log('🤖 AI: Thread created:', thread.id);
 
-Post content: "${postContent}"
-Additional context: "${context}"
-
-Generate only the comment text, nothing else.`
+    // 2) Add message to the thread
+    await openai.beta.threads.messages.create(thread.id, {
+      role: 'user',
+      content: postContent || '(no post text found)',
     });
 
-    // Run the assistant
-    const run = await openai.beta.threads.runs.create(thread.id, {
+    // 3) Create and poll the run until it finishes
+    const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
       assistant_id: assistantId,
     });
 
-    // Wait for the run to complete
-    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-    
-    while (runStatus.status === 'in_progress' || runStatus.status === 'queued') {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    console.log(`🤖 AI: Final run status: ${run.status}`);
+    if (run.status !== 'completed') {
+      throw new Error(`Assistant run not completed (status: ${run.status})`);
     }
 
-    if (runStatus.status === 'failed') {
-      throw new Error('Assistant run failed');
-    }
+    // 4) Get the messages from the thread
+    const messages = await openai.beta.threads.messages.list(thread.id, { limit: 20 });
+    const assistantMsg = messages.data.find(m => m.role === 'assistant');
+    if (!assistantMsg) throw new Error('No assistant message found in thread');
 
-    // Get the response
-    const messages = await openai.beta.threads.messages.list(thread.id);
-    const lastMessage = messages.data[0]; // Get the most recent message (assistant's response)
-    
-    if (lastMessage.role === 'assistant' && lastMessage.content.length > 0) {
-      return lastMessage.content[0].text.value.trim();
-    } else {
-      throw new Error('No response from assistant');
+    // 5) Extract the comment text
+    let comment = '';
+    for (const part of assistantMsg.content || []) {
+      if (part.type === 'text' && part.text?.value) {
+        comment += (comment ? '\n' : '') + part.text.value;
+      }
     }
+    comment = comment.trim();
+    if (!comment) throw new Error('Assistant returned empty text');
+
+    console.log(`🤖 AI: Generated comment: "${comment}"`);
+    return comment;
 
   } catch (error) {
-    console.error('OpenAI Assistant API error:', error.message);
+    console.error('🤖 AI: OpenAI Assistants API error:', error.message);
+    console.error(error.stack);
     throw new Error(`Failed to generate AI comment: ${error.message}`);
   }
 }
 
 // Post Discovery Functions
 async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10) {
+  console.log(`🚀 DISCOVERY: Starting Instagram post discovery with criteria:`, searchCriteria);
+  console.log(`🚀 DISCOVERY: Max posts requested: ${maxPosts}`);
+  console.log(`🚀 DISCOVERY: Currently discovered posts: ${discoveredPosts.size}`);
+  
   const { hashtag, keywords } = searchCriteria;
   
   if (hashtag) {
     // Search by hashtag
     const url = `https://www.instagram.com/explore/tags/${encodeURIComponent(hashtag.replace('#', ''))}/`;
+    console.log(`🚀 DISCOVERY: Navigating to hashtag URL: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle2' });
     
     // Scroll to load more posts
+    console.log(`🚀 DISCOVERY: Scrolling to load more posts...`);
     for (let i = 0; i < 3; i++) {
       await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
     
     // Extract post URLs
+    console.log(`🚀 DISCOVERY: Extracting post URLs...`);
     const posts = await page.$$eval('a[href^="/p/"]', (links, maxPosts) => {
-      return Array.from(new Set(links.map(link => link.getAttribute('href'))))
+      const urls = Array.from(new Set(links.map(link => link.getAttribute('href'))))
         .slice(0, maxPosts)
         .map(href => `https://www.instagram.com${href}`);
+      console.log(`Found ${urls.length} post URLs:`, urls.slice(0, 3));
+      return urls;
     }, maxPosts);
+    
+    console.log(`🚀 DISCOVERY: Raw posts found: ${posts.length}`);
+    console.log(`🚀 DISCOVERY: Sample posts:`, posts.slice(0, 3));
     
     // Filter out already discovered posts
     const newPosts = posts.filter(postUrl => !discoveredPosts.has(postUrl));
+    
+    console.log(`🚀 DISCOVERY: After filtering, new posts: ${newPosts.length}`);
+    console.log(`🚀 DISCOVERY: Sample new posts:`, newPosts.slice(0, 3));
     
     // Add new posts to discovered set
     newPosts.forEach(postUrl => discoveredPosts.add(postUrl));
     
     console.log(`🚀 DISCOVERY: Found ${posts.length} total posts, ${newPosts.length} new posts (${posts.length - newPosts.length} already discovered)`);
+    console.log(`🚀 DISCOVERY: Total discovered posts now: ${discoveredPosts.size}`);
     
     return newPosts;
   } else if (keywords) {
@@ -473,22 +499,124 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
 }
 
 async function getPostContent(page, postUrl, platform) {
+  console.log(`🚀 getPostContent called for ${platform} post: ${postUrl}`);
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
+
+  // Small settle to allow client-side React hydration
+  await new Promise(resolve => setTimeout(resolve, 1500));
   
   if (platform === 'instagram') {
-    // Extract Instagram post caption
-    const caption = await page.evaluate(() => {
-      const captionEl = document.querySelector('h1, [data-testid="post-caption"]');
-      return captionEl ? captionEl.textContent.trim() : '';
+    // Quick sanity: if not logged in you often get login-wall content only
+    const loginWall = await page.evaluate(() => {
+      const t = document.body?.innerText || '';
+      const blocked = t.includes('Log in') && t.includes('Sign up') && !t.includes('Like');
+      return blocked;
     });
-    return caption;
-  } else if (platform === 'x') {
-    // Extract X tweet text
-    const tweetText = await page.evaluate(() => {
-      const tweetEl = document.querySelector('[data-testid="tweetText"]');
-      return tweetEl ? tweetEl.textContent.trim() : '';
+    if (loginWall) {
+      console.log('⚠️ Instagram login wall detected — ensure ensureInstagramLoggedIn() succeeded.');
+    }
+
+    // 1) JSON-LD: Most reliable when present
+    const jsonLd = await page.evaluate(() => {
+      const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+      for (const s of scripts) {
+        try {
+          const data = JSON.parse(s.textContent || 'null');
+          // Sometimes it's a single object; sometimes an array
+          const arr = Array.isArray(data) ? data : [data];
+          for (const obj of arr) {
+            if (obj && (obj['@type'] === 'SocialMediaPosting' || obj['@type'] === 'ImageObject')) {
+              const text = obj.articleBody || obj.caption || obj.description;
+              if (text && text.trim().length > 0) return text.trim();
+            }
+          }
+        } catch (_) {}
+      }
+      return null;
     });
-    return tweetText;
+    if (jsonLd) {
+      console.log('✅ Caption extracted via JSON-LD.');
+      return jsonLd;
+    }
+
+    // 2) OG description fallback
+    const ogDesc = await page.evaluate(() => {
+      const m = document.querySelector('meta[property="og:description"]') || document.querySelector('meta[name="description"]');
+      const c = m?.getAttribute('content') || '';
+      // IG sometimes formats like 'username on Instagram: "caption text …"'
+      if (c) {
+        // Try to strip leading "username on Instagram:" noise, keep inside quotes if present
+        const quoteMatch = c.match(/"([^"]+)"/) || c.match(/"([^"]+)"/);
+        return (quoteMatch?.[1] || c).trim();
+      }
+      return '';
+    });
+    if (ogDesc && ogDesc.length > 0) {
+      console.log('✅ Caption extracted via OG meta.');
+      return ogDesc;
+    }
+
+    // 3) DOM fallback (best-effort)
+    const domCaption = await page.evaluate(() => {
+      // Heuristic: find the main article or main region
+      const root =
+        document.querySelector('article') ||
+        document.querySelector('main') ||
+        document.body;
+
+      if (!root) return '';
+
+      // Collect plausible text nodes
+      const candidates = Array.from(root.querySelectorAll('h1,h2,h3,p,span,div[dir="auto"],li'))
+        .map(el => (el.textContent || '').trim())
+        .filter(t =>
+          t.length >= 10 &&
+          t.length <= 2000 &&
+          !/instagram|log in|sign up|create an account/i.test(t)
+        );
+
+      // Choose first that looks like a caption (has hashtags OR ~sentence-like)
+      const scored = candidates.map(t => {
+        let score = 0;
+        if (/#\w/.test(t)) score += 2;
+        if (/@\w/.test(t)) score += 1;
+        if (/[.!?…]/.test(t)) score += 1;
+        if (t.split(/\s+/).length >= 6) score += 1;
+        return { t, score };
+      }).sort((a, b) => b.score - a.score);
+
+      return (scored[0]?.t || candidates[0] || '').trim();
+    });
+
+    if (domCaption) {
+      console.log('✅ Caption extracted via DOM fallback.');
+      return domCaption;
+    }
+
+    console.log('⚠️ No caption text found — returning empty string.');
+    return '';
+  }
+
+  if (platform === 'x') {
+    // Primary selector
+    let tweetText = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="tweetText"]');
+      return el ? el.textContent.trim() : '';
+    });
+
+    // Fallback: combine all language blocks inside the main article
+    if (!tweetText) {
+      tweetText = await page.evaluate(() => {
+        const article = document.querySelector('article');
+        if (!article) return '';
+        const parts = Array.from(article.querySelectorAll('div[lang]')).map(n => n.textContent?.trim() || '');
+        const combined = parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        return combined;
+      });
+    }
+
+    console.log(`🚀 X tweet content extracted: "${(tweetText || '').slice(0, 140)}${tweetText && tweetText.length > 140 ? '…' : ''}"`);
+    return tweetText || '';
   }
   
   return '';
@@ -999,7 +1127,6 @@ async function instagramLike(page, postUrl) {
       // Click like buttons, prioritizing the first one (usually the main post)
       if (rect.width > 0 && rect.height > 0) {
         // Skip comment likes by checking if this is likely a comment like button
-        // Comment like buttons are usually smaller and positioned differently
         const isLikelyCommentLike = rect.width < 20 || rect.height < 20 || 
                                    (likeButton.closest('ul') && likeButton.closest('li'));
         
@@ -1087,21 +1214,105 @@ async function instagramLike(page, postUrl) {
 }
 
 async function instagramComment(page, postUrl, comment) {
+  console.log(`🚀 NEW CODE: instagramComment function called with URL: ${postUrl}`);
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  await clickFirstMatching(page, [
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  console.log('🚀 NEW CODE: Page loaded, attempting to comment on post');
+  
+  // Click the comment button to open the comment input
+  const commentButtonClicked = await clickFirstMatching(page, [
     'svg[aria-label="Comment"]',
     'span[aria-label="Comment"]',
     'button svg[aria-label="Comment"]',
+    'button[aria-label="Comment"]',
+    'div[role="button"]:has(svg[aria-label="Comment"])',
   ]);
-  await page.waitForSelector('textarea', { timeout: 20000 });
-  await page.type('textarea', comment, { delay: 10 });
-  const posted = await clickFirstMatching(page, [
-    'button[type="submit"]',
-  ]) || await clickByText(page, ['Post']);
-  if (!posted) {
-    await page.keyboard.press('Enter');
+  
+  if (!commentButtonClicked) {
+    throw new Error('Could not find comment button');
   }
+  
+  console.log('🚀 NEW CODE: Comment button clicked, waiting for textarea');
+  
+  // Wait for the comment textarea to appear
+  await page.waitForSelector('textarea[aria-label="Add a comment…"]', { timeout: 20000 });
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Type the comment
+  console.log(`🚀 NEW CODE: Typing comment: "${comment}"`);
+  await page.type('textarea[aria-label="Add a comment…"]', comment, { delay: 10 });
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Try to click Post button using XPath
+  console.log('🚀 NEW CODE: Attempting to click Post button with XPath');
+  
+  // Debug: Let's see what buttons are actually on the page
+  const buttonTexts = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+    return buttons.map((btn, i) => {
+      const text = btn.textContent?.trim() || '';
+      const ariaLabel = btn.getAttribute('aria-label') || '';
+      return `Button ${i}: text="${text}", aria-label="${ariaLabel}"`;
+    }).filter(info => info.includes('Post') || info.includes('Submit'));
+  });
+  
+  console.log('🔍 DEBUG: Found buttons with Post/Submit text:');
+  buttonTexts.forEach(text => console.log(`  ${text}`));
+  
+  let postBtn =
+    await $xFirst(page, buildXPathTextMatch(['button','div'], 'Post')) ||
+    await $xFirst(page, buildXPathTextMatch(['button','div'], 'POST'));
+
+  let posted = false;
+  if (postBtn) {
+    try {
+      await postBtn.click();
+      console.log('✅ Post button clicked successfully');
+      posted = true;
+    } catch (error) {
+      console.log(`❌ Post button click failed: ${error.message}`);
+    }
+  } else {
+    console.log('❌ Post button not found with XPath');
+    
+    // Fallback: try to find by aria-label
+    try {
+      const ariaPostBtn = await page.$('button[aria-label="Post"], div[aria-label="Post"]');
+      if (ariaPostBtn) {
+        await ariaPostBtn.click();
+        console.log('✅ Post button clicked via aria-label fallback');
+        posted = true;
+      }
+    } catch (error) {
+      console.log(`❌ Aria-label fallback also failed: ${error.message}`);
+    }
+  }
+  
+  if (!posted) {
+    console.log('🚀 NEW CODE: Post button click failed, trying Enter key');
+    // Fallback: try pressing Enter
+    await page.keyboard.press('Enter');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Check if comment was actually posted by looking for it in the comments
+    const commentPosted = await page.evaluate((commentText) => {
+      const comments = document.querySelectorAll('span[dir="auto"]');
+      for (const comment of comments) {
+        if (comment.textContent && comment.textContent.includes(commentText.substring(0, 20))) {
+          return true;
+        }
+      }
+      return false;
+    }, comment);
+    
+    if (!commentPosted) {
+      throw new Error('Failed to post comment - Post button not found and Enter key did not work');
+    }
+  }
+  
+  console.log('🚀 NEW CODE: Comment posted successfully');
+  await new Promise(resolve => setTimeout(resolve, 2000));
 }
 
 // X (Twitter) flows
@@ -1236,16 +1447,21 @@ export async function runAction(options) {
     searchCriteria,
     maxPosts = 5,
     useAI = false,
-    aiContext = '',
   } = options;
 
   console.log(`runAction called with action: ${action}, platform: ${platform}, sessionName: ${sessionName}`);
   
-  // Clear liked posts tracking when starting a new like action
-  if (action === 'like') {
-    likedPosts.clear();
-    discoveredPosts.clear();
-    console.log(`🚀 CLEARED TRACKING: Starting fresh like session (cleared ${likedPosts.size} liked posts, ${discoveredPosts.size} discovered posts)`);
+  // Clear tracking when starting a new action
+  if (action === 'like' || action === 'comment' || action === 'auto-comment') {
+    const prevLiked = likedPosts.size;
+    const prevDiscovered = discoveredPosts.size;
+    
+    if (action === 'like') {
+      likedPosts.clear();
+    }
+    discoveredPosts.clear(); // Always clear discovered posts for fresh search
+    
+    console.log(`🚀 CLEARED TRACKING: Starting fresh ${action} session (cleared ${prevLiked} liked posts, ${prevDiscovered} discovered posts)`);
   }
 
   let browser;
@@ -1370,7 +1586,7 @@ export async function runAction(options) {
           try {
             console.log(`Processing post for auto-comment: ${postUrl}`);
             const postContent = await getPostContent(page, postUrl, platform);
-            const aiComment = useAI ? await generateAIComment(postContent, aiContext) : comment;
+            const aiComment = useAI ? await generateAIComment(postContent) : comment;
             console.log(`Generated auto-comment: "${aiComment}"`);
             await instagramComment(page, postUrl, aiComment);
             console.log(`Successfully auto-commented on post: ${postUrl}`);
@@ -1421,9 +1637,14 @@ export async function runAction(options) {
         }
       }
       if (action === 'comment') {
+        console.log('🎯 COMMENT ACTION: Starting comment action...');
+        console.log(`🎯 COMMENT ACTION: Search criteria: ${JSON.stringify(searchCriteria)}`);
+        console.log(`🎯 COMMENT ACTION: Use AI: ${useAI}`);
+        console.log(`🎯 COMMENT ACTION: Manual comment: ${comment}`);
+        
         if (searchCriteria) {
           // Bulk comment from search results
-          console.log(`Discovering Instagram posts for bulk comment with criteria: ${JSON.stringify(searchCriteria)}`);
+          console.log(`🎯 COMMENT ACTION: Discovering Instagram posts for bulk comment with criteria: ${JSON.stringify(searchCriteria)}`);
           // Parse search criteria properly
           const parsedCriteria = typeof searchCriteria === 'string' 
             ? (searchCriteria.startsWith('#') 
@@ -1431,21 +1652,32 @@ export async function runAction(options) {
                 : { keywords: searchCriteria })
             : searchCriteria;
           const posts = await discoverInstagramPosts(page, parsedCriteria, maxPosts);
-          console.log(`Found ${posts.length} posts to comment on`);
+          console.log(`🎯 COMMENT ACTION: Found ${posts.length} posts to comment on`);
           const results = [];
           
           for (const postUrl of posts) {
             try {
-              console.log(`Attempting to comment on post: ${postUrl}`);
+              console.log(`🎯 COMMENT ACTION: Attempting to comment on post: ${postUrl}`);
               const postContent = await getPostContent(page, postUrl, platform);
-              const finalComment = useAI ? await generateAIComment(postContent, aiContext) : comment;
-              console.log(`Generated comment: "${finalComment}"`);
+              console.log(`🎯 COMMENT ACTION: Post content extracted, length: ${postContent.length}`);
+              
+              let finalComment;
+              if (useAI) {
+                console.log(`🎯 COMMENT ACTION: Generating AI comment...`);
+                finalComment = await generateAIComment(postContent);
+                console.log(`🎯 COMMENT ACTION: AI comment generated: "${finalComment}"`);
+              } else {
+                finalComment = comment;
+                console.log(`🎯 COMMENT ACTION: Using manual comment: "${finalComment}"`);
+              }
+              
+              console.log(`🎯 COMMENT ACTION: About to post comment: "${finalComment}"`);
               await instagramComment(page, postUrl, finalComment);
-              console.log(`Successfully commented on post: ${postUrl}`);
+              console.log(`🎯 COMMENT ACTION: Successfully commented on post: ${postUrl}`);
               results.push({ url: postUrl, success: true, comment: finalComment });
               await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
             } catch (error) {
-              console.log(`Failed to comment on post ${postUrl}: ${error.message}`);
+              console.log(`🎯 COMMENT ACTION: Failed to comment on post ${postUrl}: ${error.message}`);
               results.push({ url: postUrl, success: false, error: error.message });
             }
           }
@@ -1454,7 +1686,9 @@ export async function runAction(options) {
         } else {
           // Single post comment
           console.log(`Attempting to comment on single Instagram post: ${url}`);
-          const finalComment = useAI ? await generateAIComment('', aiContext) : comment;
+          const postContent = await getPostContent(page, url, platform);
+          console.log(`Extracted post content: "${postContent.substring(0, 100)}..."`);
+          const finalComment = useAI ? await generateAIComment(postContent) : comment;
           console.log(`Generated comment: "${finalComment}"`);
           await instagramComment(page, url, finalComment);
           console.log(`Successfully commented on Instagram post: ${url}`);
@@ -1492,7 +1726,7 @@ export async function runAction(options) {
         for (const postUrl of posts) {
           try {
             const postContent = await getPostContent(page, postUrl, platform);
-            const aiComment = useAI ? await generateAIComment(postContent, aiContext) : comment;
+            const aiComment = useAI ? await generateAIComment(postContent) : comment;
             await xComment(page, postUrl, aiComment);
             results.push({ url: postUrl, success: true, comment: aiComment });
             await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
@@ -1527,7 +1761,7 @@ export async function runAction(options) {
         }
       }
       if (action === 'comment') {
-        const finalComment = useAI ? await generateAIComment('', aiContext) : comment;
+        const finalComment = useAI ? await generateAIComment('') : comment;
         await xComment(page, url, finalComment);
       }
       if (action === 'follow') {

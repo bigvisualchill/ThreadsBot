@@ -3,11 +3,22 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAction } from './bot.js';
+import cors from 'cors';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// Add CORS support
+app.use(cors());
+
+// Add basic request logging
+app.use((req, res, next) => {
+  console.log(`📡 SERVER: ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
