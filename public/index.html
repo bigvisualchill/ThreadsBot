@@ -554,6 +554,7 @@
                                 <option value="comment">💬 Comment on Posts</option>
                                 <option value="auto-comment">🤖 Auto-Comment Multiple Posts</option>
                                 <option value="discover">🔍 Discover Posts Only</option>
+                                <option value="debug-comments">🔧 Debug Comment Detection</option>
                             </select>
                         </div>
                     </div>
@@ -980,10 +981,29 @@
             updateStatus('Running action...', 'loading');
 
             try {
+                // Get username from the selected session
+                let username = null;
+                try {
+                    const sessionData = localStorage.getItem(`session_${activeSession}`);
+                    if (sessionData) {
+                        const parsed = JSON.parse(sessionData);
+                        username = parsed.username;
+                        console.log('🎯 WEB UI: Retrieved username from session:', username);
+                    } else {
+                        // Fallback: use session name as username for existing sessions
+                        username = activeSession;
+                        console.log('🎯 WEB UI: Using session name as username fallback:', username);
+                    }
+                } catch (error) {
+                    console.log('🎯 WEB UI: Could not retrieve username from session, using session name:', error);
+                    username = activeSession;
+                }
+
                 const payload = {
                     action,
                     platform,
                     sessionName: activeSession,
+                    username: username, // Add username from session
                     searchCriteria: hashtag || keywords,
                     maxPosts,
                     useAI,

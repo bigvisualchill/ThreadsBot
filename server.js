@@ -44,8 +44,8 @@ app.post('/run', async (req, res) => {
     action,
     url,
     comment,
-    username,
-    password,
+    username: requestUsername,
+    password: requestPassword,
     headful = false,
     dryRun = false,
     sessionName = 'default',
@@ -54,6 +54,14 @@ app.post('/run', async (req, res) => {
     useAI = false,
     aiContext = '',
   } = req.body || {};
+
+  // Use environment variables if username/password not provided in request
+  const envUser = platform === 'instagram' ? process.env.INSTAGRAM_USERNAME : process.env.X_USERNAME;
+  const envPass = platform === 'instagram' ? process.env.INSTAGRAM_PASSWORD : process.env.X_PASSWORD;
+  const username = requestUsername || envUser;
+  const password = requestPassword || envPass;
+
+  console.log(`📡 SERVER: Using username: ${username} for session: ${sessionName}`);
 
   try {
     isRunning = true;

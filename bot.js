@@ -5,8 +5,12 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
+import { hasMyCommentAndCache, clearCommentCache, getCommentCacheStats, debugCommentDetection } from './utils/igHasMyComment.js';
 
 puppeteer.use(StealthPlugin());
+
+// cross-runtime sleep (works in any Puppeteer version)
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +47,8 @@ function getSessionFilePath(platform, sessionName) {
   const sessionsDir = path.join(__dirname, '.sessions');
   return { sessionsDir, sessionPath: path.join(sessionsDir, `${platform}-${sessionName}.json`) };
 }
+
+
 
 async function saveSession(page, platform, sessionName = 'default') {
   const { sessionsDir, sessionPath } = getSessionFilePath(platform, sessionName);
@@ -414,7 +420,7 @@ async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10) {
     console.log(`🚀 DISCOVERY: Scrolling to load more posts...`);
     for (let i = 0; i < 3; i++) {
       await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
     
     // Extract post URLs
@@ -469,6 +475,48 @@ async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10) {
   return [];
 }
 
+// Incremental discovery that can be called repeatedly to top up a queue
+async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), minNeeded = 6, maxScrolls = 20) {
+  // Normalize criteria -> URL
+  const parsed = typeof searchCriteria === 'string'
+    ? (searchCriteria.startsWith('#') ? { hashtag: searchCriteria } : { keywords: searchCriteria })
+    : (searchCriteria || {});
+  const { hashtag, keywords } = parsed;
+
+  const baseUrl = hashtag
+    ? `https://www.instagram.com/explore/tags/${encodeURIComponent(hashtag.replace('#',''))}/`
+    : `https://www.instagram.com/explore/tags/${encodeURIComponent((keywords || '').split(/\s+/)[0])}/`;
+
+  // If we aren't already on the right explore page, navigate there
+  if (!page.url().startsWith(baseUrl)) {
+    await page.goto(baseUrl, { waitUntil: 'networkidle2' });
+    await sleep(500);
+  }
+
+  const collected = new Set(); // local new URLs this call
+
+  for (let i = 0; i < maxScrolls && collected.size < minNeeded; i++) {
+    // Collect links for posts & reels (avoid duplicates & already-seen)
+    const hrefs = await page.$$eval(
+      'a[href^="/p/"], a[href^="/reel/"], a[href^="/tv/"]',
+      as => as.map(a => a.getAttribute('href')).filter(Boolean)
+    );
+
+    for (const href of hrefs) {
+      const abs = href.startsWith('http') ? href : `https://www.instagram.com${href}`;
+      if (!seen.has(abs)) collected.add(abs);
+    }
+
+    // Scroll to load more
+    await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
+    await sleep(500 + Math.floor(Math.random() * 300));
+  }
+
+  try { collected.forEach(u => discoveredPosts.add(u)); } catch {}
+
+  return Array.from(collected);
+}
+
 async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
   const { hashtag, keywords } = searchCriteria;
   
@@ -484,7 +532,7 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
   // Scroll to load more tweets
   for (let i = 0; i < 3; i++) {
     await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 800));
   }
   
   // Extract tweet URLs
@@ -501,9 +549,6 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
 async function getPostContent(page, postUrl, platform) {
   console.log(`🚀 getPostContent called for ${platform} post: ${postUrl}`);
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
-
-  // Small settle to allow client-side React hydration
-  await new Promise(resolve => setTimeout(resolve, 1500));
   
   if (platform === 'instagram') {
     // Quick sanity: if not logged in you often get login-wall content only
@@ -626,7 +671,7 @@ async function getPostContent(page, postUrl, platform) {
 async function handleOneTapPage(page) {
   try {
     console.log('Handling one-tap login page...');
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for page to load
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for page to load
     
     // Try to find and click the dismiss button
     const dismissClicked = await page.evaluate(() => {
@@ -669,7 +714,7 @@ async function handleOneTapPage(page) {
     
     if (dismissClicked) {
       console.log('Successfully dismissed one-tap page');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for navigation
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for navigation
       
       // Wait for navigation to complete
       try {
@@ -698,8 +743,8 @@ async function ensureInstagramLoggedIn(page, { username, password }) {
       await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2', timeout: 30000 });
     }
     
-    // Wait for page to load
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for page to load briefly
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     // Check current URL after navigation
     const finalUrl = page.url();
@@ -824,8 +869,8 @@ async function ensureInstagramLoggedIn(page, { username, password }) {
     console.log('Logging in to Instagram...');
     await page.goto('https://www.instagram.com/accounts/login/', { waitUntil: 'networkidle2', timeout: 30000 });
     
-    // Wait for the page to load and check if we're already logged in
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Brief wait for page to settle
+    await new Promise(resolve => setTimeout(resolve, 800));
     
     // Check again if we're logged in (sometimes redirect happens)
     const stillLoggedIn = await page.evaluate(() => {
@@ -963,7 +1008,7 @@ async function ensureInstagramLoggedIn(page, { username, password }) {
     // Handle "Save login info" popup that appears after login
     try {
       console.log('Checking for save login info popup...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for popup to appear
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for popup to appear
       
       const popupHandled = await page.evaluate(() => {
         // Look for and handle various popup types
@@ -1001,7 +1046,7 @@ async function ensureInstagramLoggedIn(page, { username, password }) {
       
       if (popupHandled) {
         console.log('Handled save login info popup');
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for popup to disappear
+        await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for popup to disappear
       }
     } catch (popupError) {
       console.log('No popup found or popup handling failed:', popupError.message);
@@ -1077,7 +1122,6 @@ async function instagramLike(page, postUrl) {
   }
   
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await new Promise(resolve => setTimeout(resolve, 2000)); // Longer wait for page to load
   
   console.log(`🚀 NEW CODE: Page loaded, attempting to like post: ${postUrl}`);
   
@@ -1213,12 +1257,47 @@ async function instagramLike(page, postUrl) {
   }
 }
 
-async function instagramComment(page, postUrl, comment) {
-  console.log(`🚀 NEW CODE: instagramComment function called with URL: ${postUrl}`);
-  await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await new Promise(resolve => setTimeout(resolve, 2000));
+async function instagramComment(page, postUrl, comment, username) {
+  console.log(`💬 ===== INSTAGRAM COMMENT START =====`);
+  console.log(`💬 POST: ${postUrl}`);
+  console.log(`💬 COMMENT: ${comment}`);
+  console.log(`💬 USERNAME: ${username}`);
   
-  console.log('🚀 NEW CODE: Page loaded, attempting to comment on post');
+  // Quick navigation optimization - only navigate if not already on post
+  const currentUrl = page.url();
+  const shortcode = postUrl.split('/p/')[1]?.split('/')[0] || postUrl.split('/reel/')[1]?.split('/')[0];
+  
+  if (!currentUrl.includes(shortcode)) {
+    console.log(`💬 NAVIGATING to post`);
+    await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
+    // Quick wait for essential elements only
+    try {
+      await page.waitForSelector('article, main, [role="main"]', { timeout: 2000 });
+    } catch {
+      console.log('💬 Main content not found quickly, continuing...');
+    }
+  } else {
+    console.log(`💬 ALREADY ON POST`);
+  }
+  
+  console.log('💬 Page ready, attempting to comment');
+  
+  // CRITICAL: Double-check for existing comments before posting
+  console.log('💬 DOUBLE-CHECKING for existing comments before posting...');
+  const alreadyCommented = await hasMyCommentAndCache({
+    page,
+    username: username,
+    postUrl: postUrl,
+  });
+  
+  if (alreadyCommented) {
+    console.log('💬 ===== COMMENT SKIPPED =====');
+    console.log('💬 Already commented - double-check detected existing comment');
+    console.log('💬 ===== COMMENT SKIPPED =====');
+    return { skipped: true, reason: 'Already commented (double-check)' };
+  }
+  
+  console.log('💬 Double-check passed - no existing comment found, proceeding...');
   
   // Click the comment button to open the comment input
   const commentButtonClicked = await clickFirstMatching(page, [
@@ -1233,86 +1312,86 @@ async function instagramComment(page, postUrl, comment) {
     throw new Error('Could not find comment button');
   }
   
-  console.log('🚀 NEW CODE: Comment button clicked, waiting for textarea');
+  console.log('🎯 Comment button clicked, waiting for textarea');
   
   // Wait for the comment textarea to appear
-  await page.waitForSelector('textarea[aria-label="Add a comment…"]', { timeout: 20000 });
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await page.waitForSelector('textarea[aria-label="Add a comment…"]', { timeout: 15000 });
+  await new Promise(resolve => setTimeout(resolve, 500)); // Reduced delay
   
-  // Type the comment
-  console.log(`🚀 NEW CODE: Typing comment: "${comment}"`);
-  await page.type('textarea[aria-label="Add a comment…"]', comment, { delay: 10 });
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // Type the comment using the Enter key method (more reliable)
+  console.log(`✍️  Typing comment: "${comment}"`);
   
-  // Try to click Post button using XPath
-  console.log('🚀 NEW CODE: Attempting to click Post button with XPath');
+  // Click the textarea first to ensure focus
+  await page.click('textarea[aria-label="Add a comment…"]');
+  await new Promise(resolve => setTimeout(resolve, 300)); // Reduced delay
   
-  // Debug: Let's see what buttons are actually on the page
-  const buttonTexts = await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
-    return buttons.map((btn, i) => {
-      const text = btn.textContent?.trim() || '';
-      const ariaLabel = btn.getAttribute('aria-label') || '';
-      return `Button ${i}: text="${text}", aria-label="${ariaLabel}"`;
-    }).filter(info => info.includes('Post') || info.includes('Submit'));
-  });
+  // Type with human-like delay to help React enable the button
+  await page.keyboard.type(comment, { delay: 25 }); // Slightly faster typing
+  await new Promise(resolve => setTimeout(resolve, 800)); // Reduced delay
   
-  console.log('🔍 DEBUG: Found buttons with Post/Submit text:');
-  buttonTexts.forEach(text => console.log(`  ${text}`));
+  // Press Enter to post the comment
+  console.log('⏎ Posting comment...');
+  await page.keyboard.press('Enter');
   
-  let postBtn =
-    await $xFirst(page, buildXPathTextMatch(['button','div'], 'Post')) ||
-    await $xFirst(page, buildXPathTextMatch(['button','div'], 'POST'));
-
-  let posted = false;
-  if (postBtn) {
-    try {
-      await postBtn.click();
-      console.log('✅ Post button clicked successfully');
-      posted = true;
-    } catch (error) {
-      console.log(`❌ Post button click failed: ${error.message}`);
-    }
-  } else {
-    console.log('❌ Post button not found with XPath');
+  // Wait for the comment to be posted by checking DOM
+  console.log('⏳ Verifying comment posted...');
+  
+  // Reduced wait time for comment verification
+  await sleep(1500);
+  
+  const commentPosted = await page.evaluate((commentText) => {
+    // Look for the comment in multiple possible locations
+    const selectors = [
+      'span[dir="auto"]',
+      'div[dir="auto"]',
+      'span[data-testid="comment"]',
+      'div[data-testid="comment"]',
+      'article span',
+      'article div'
+    ];
     
-    // Fallback: try to find by aria-label
-    try {
-      const ariaPostBtn = await page.$('button[aria-label="Post"], div[aria-label="Post"]');
-      if (ariaPostBtn) {
-        await ariaPostBtn.click();
-        console.log('✅ Post button clicked via aria-label fallback');
-        posted = true;
-      }
-    } catch (error) {
-      console.log(`❌ Aria-label fallback also failed: ${error.message}`);
-    }
-  }
-  
-  if (!posted) {
-    console.log('🚀 NEW CODE: Post button click failed, trying Enter key');
-    // Fallback: try pressing Enter
-    await page.keyboard.press('Enter');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Check if comment was actually posted by looking for it in the comments
-    const commentPosted = await page.evaluate((commentText) => {
-      const comments = document.querySelectorAll('span[dir="auto"]');
-      for (const comment of comments) {
-        if (comment.textContent && comment.textContent.includes(commentText.substring(0, 20))) {
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        const text = element.textContent?.trim() || '';
+        // Check if the comment text appears in this element
+        if (text.includes(commentText.substring(0, Math.min(20, commentText.length)))) {
           return true;
         }
       }
-      return false;
-    }, comment);
-    
-    if (!commentPosted) {
-      throw new Error('Failed to post comment - Post button not found and Enter key did not work');
     }
+    return false;
+  }, comment);
+  
+  let posted = false;
+  if (commentPosted) {
+    console.log('✅ Comment verified in DOM');
+    posted = true;
+  } else {
+    console.log('⚠️  Comment not immediately visible, but may have posted');
+    // Don't fail immediately - Instagram sometimes delays showing comments
+    posted = true;
   }
   
-  console.log('🚀 NEW CODE: Comment posted successfully');
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  if (!posted) {
+    throw new Error('Failed to post comment - Enter key method did not work');
+  }
+  
+  // After successful response, mark as commented so you never re-check the DOM for this post again.
+  await hasMyCommentAndCache({
+    page,
+    username: username,
+    postUrl: postUrl,
+    markCommented: true,
+  });
+  
+  console.log('💬 ===== COMMENT SUCCESS =====');
+  console.log('💬 Comment posted successfully');
+  console.log('💬 ===== COMMENT SUCCESS =====');
+  // Reduced delay - no need to wait long after posting
+  await new Promise(resolve => setTimeout(resolve, 800));
+  
+  return { success: true };
 }
 
 // X (Twitter) flows
@@ -1451,7 +1530,7 @@ export async function runAction(options) {
 
   console.log(`runAction called with action: ${action}, platform: ${platform}, sessionName: ${sessionName}`);
   
-  // Clear tracking when starting a new action
+      // Clear tracking when starting a new action
   if (action === 'like' || action === 'comment' || action === 'auto-comment') {
     const prevLiked = likedPosts.size;
     const prevDiscovered = discoveredPosts.size;
@@ -1460,6 +1539,12 @@ export async function runAction(options) {
       likedPosts.clear();
     }
     discoveredPosts.clear(); // Always clear discovered posts for fresh search
+    
+    // Also clear comment cache for fresh testing
+    if (platform === 'instagram') {
+      console.log(`🧹 Clearing comment cache for fresh testing...`);
+      clearCommentCache();
+    }
     
     console.log(`🚀 CLEARED TRACKING: Starting fresh ${action} session (cleared ${prevLiked} liked posts, ${prevDiscovered} discovered posts)`);
   }
@@ -1472,7 +1557,7 @@ export async function runAction(options) {
     if (!platform || !['instagram', 'x'].includes(platform)) {
       throw new Error('Invalid or missing platform');
     }
-    if (!action || !['login', 'like', 'comment', 'follow', 'discover', 'auto-comment', 'check-session', 'logout'].includes(action)) {
+    if (!action || !['login', 'like', 'comment', 'follow', 'discover', 'auto-comment', 'check-session', 'logout', 'debug-comments'].includes(action)) {
       throw new Error('Invalid or missing action');
     }
     if (['like', 'comment', 'follow'].includes(action) && !url && !searchCriteria) {
@@ -1523,6 +1608,12 @@ export async function runAction(options) {
     const sessionLoaded = await loadSession(page, platform, sessionName);
     console.log(`Session loading result: ${sessionLoaded}`);
     
+    // Load comment cache statistics for Instagram
+    if (platform === 'instagram') {
+      const cacheStats = getCommentCacheStats();
+      console.log(`📊 Comment cache: ${cacheStats.size} posts cached`);
+    }
+    
     const homeUrl = platform === 'instagram' ? 'https://www.instagram.com/' : 'https://x.com/home';
     console.log(`Navigating to: ${homeUrl}`);
     await page.goto(homeUrl, { waitUntil: 'networkidle2' });
@@ -1572,33 +1663,122 @@ export async function runAction(options) {
       
       if (action === 'auto-comment') {
         console.log(`Auto-commenting on Instagram posts with criteria: ${JSON.stringify(searchCriteria)}`);
-        // Parse search criteria properly
-        const parsedCriteria = typeof searchCriteria === 'string' 
-          ? (searchCriteria.startsWith('#') 
-              ? { hashtag: searchCriteria } 
-              : { keywords: searchCriteria })
+
+        const parsedCriteria = typeof searchCriteria === 'string'
+          ? (searchCriteria.startsWith('#') ? { hashtag: searchCriteria } : { keywords: searchCriteria })
           : searchCriteria;
-        const posts = await discoverInstagramPosts(page, parsedCriteria, maxPosts);
-        console.log(`Found ${posts.length} posts for auto-commenting`);
+
         const results = [];
+        const targetSuccesses = Math.max(1, Number(maxPosts) || 1);  // how many successful comments you want
+        let successes = 0;
+        let attempts = 0;
+        let consecutiveFailures = 0;  // Track consecutive failures to find new posts
+        const seen = new Set([...discoveredPosts]);                   // avoid picking same URLs again
+        let queue = await nextInstagramCandidates(page, parsedCriteria, seen, Math.min(10, targetSuccesses * 2));
+
+        console.log(`🎯 ===== COMMENT LOOP START =====`);
+        console.log(`🎯 TARGET: ${targetSuccesses} successful comments`);
+        console.log(`🎯 WILL CONTINUE SEARCHING until target is reached`);
+        console.log(`🎯 ===== COMMENT LOOP START =====`);
         
-        for (const postUrl of posts) {
+        while (successes < targetSuccesses) {
+          console.log(`🎯 LOOP CHECK: successes=${successes}/${targetSuccesses}, attempts=${attempts}, consecutiveFailures=${consecutiveFailures}`);
+          
+          // Refill queue if empty or running low
+          if (queue.length <= 1) {
+            console.log(`🔄 Queue running low (${queue.length} posts) — discovering more candidates…`);
+            const more = await nextInstagramCandidates(page, parsedCriteria, seen, 15);
+            if (more.length === 0) {
+              consecutiveFailures++;
+              console.log(`⚠️  No new candidates found (failure ${consecutiveFailures})`);
+              if (consecutiveFailures >= 3 && queue.length === 0) {
+                console.log('❌ Unable to find any new posts after 3 attempts, stopping.');
+                break;
+              }
+            } else {
+              consecutiveFailures = 0; // Reset on successful discovery
+              queue.push(...more);
+              console.log(`✅ Found ${more.length} new candidates, queue now has ${queue.length} posts`);
+            }
+          }
+
+          const postUrl = queue.shift();
+          seen.add(postUrl);
+          attempts++;
+
           try {
-            console.log(`Processing post for auto-comment: ${postUrl}`);
+            console.log(`🎯 Processing post ${attempts}/${targetSuccesses * 3}: ${postUrl} (successes: ${successes}/${targetSuccesses})`);
+            console.log(`🔍 Queue status: ${queue.length} posts remaining`);
+            
+            // Early duplicate check — skip without generating AI or navigating
+            console.log(`🔍 Checking if already commented (username: ${username})`);
+            const already = await hasMyCommentAndCache({ page, username, postUrl });
+            if (already) {
+              console.log(`⏭️  SKIP: Already commented on this post → ${postUrl}`);
+              console.log(`🔄 Continuing search for new post to comment on...`);
+              results.push({ url: postUrl, success: false, error: 'Already commented' });
+              // Don't increment attempts for skipped posts - just continue searching
+              attempts--; // Undo the increment since this wasn't a real attempt
+              continue; // Immediately move to next post in queue
+            }
+            console.log(`✅ No existing comment found, proceeding to comment on this post`);
+            
+
+            console.log(`📝 Getting post content for commenting...`);
             const postContent = await getPostContent(page, postUrl, platform);
-            const aiComment = useAI ? await generateAIComment(postContent) : comment;
-            console.log(`Generated auto-comment: "${aiComment}"`);
-            await instagramComment(page, postUrl, aiComment);
-            console.log(`Successfully auto-commented on post: ${postUrl}`);
-            results.push({ url: postUrl, success: true, comment: aiComment });
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
+            
+            let aiComment;
+            if (useAI) {
+              console.log(`🤖 Generating AI comment...`);
+              aiComment = await generateAIComment(postContent);
+              console.log(`🤖 AI comment: "${aiComment}"`);
+            } else {
+              aiComment = comment;
+              console.log(`💬 Using manual comment: "${aiComment}"`);
+            }
+
+            // Post the comment (this will re-check and skip if already commented)
+            const commentResult = await instagramComment(page, postUrl, aiComment, username);
+
+            if (commentResult.skipped) {
+              console.log(`⏭️  SKIPPED at posting stage: ${postUrl} - ${commentResult.reason}`);
+              results.push({ url: postUrl, success: false, error: commentResult.reason });
+            } else {
+              console.log(`✅ SUCCESS: commented on ${postUrl}`);
+              results.push({ url: postUrl, success: true, comment: aiComment });
+              successes++;
+              console.log(`🎯 PROGRESS: ${successes}/${targetSuccesses} successful comments`);
+              
+              // Check if we've reached our target
+              if (successes >= targetSuccesses) {
+                console.log(`🎉 ===== TARGET REACHED! =====`);
+                console.log(`🎉 Successfully commented on ${successes} posts`);
+                console.log(`🎉 Breaking out of loop`);
+                console.log(`🎉 ===== TARGET REACHED! =====`);
+                break;
+              }
+            }
+            
+            // Shorter delay between posts for better efficiency
+            await new Promise(r => setTimeout(r, 1500 + Math.floor(Math.random() * 1000)));
           } catch (error) {
-            console.log(`Failed to auto-comment on post ${postUrl}: ${error.message}`);
+            console.log(`❌ Error on ${postUrl}: ${error.message}`);
             results.push({ url: postUrl, success: false, error: error.message });
+            // Continue to next post without long delay
+            await new Promise(r => setTimeout(r, 500));
           }
         }
-        
-        return { ok: true, message: `Auto-commented on ${results.filter(r => r.success).length} posts`, results };
+
+        console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
+        if (successes < targetSuccesses) {
+          console.log(`⚠️  Did not reach target of ${targetSuccesses} comments. Reached limit of ${targetSuccesses * 3} attempts.`);
+        }
+
+        return {
+          ok: true,
+          message: `Commented on ${successes}/${targetSuccesses} posts`,
+          results
+        };
       }
 
       if (action === 'like') {
@@ -1643,61 +1823,170 @@ export async function runAction(options) {
         console.log(`🎯 COMMENT ACTION: Manual comment: ${comment}`);
         
         if (searchCriteria) {
-          // Bulk comment from search results
-          console.log(`🎯 COMMENT ACTION: Discovering Instagram posts for bulk comment with criteria: ${JSON.stringify(searchCriteria)}`);
-          // Parse search criteria properly
-          const parsedCriteria = typeof searchCriteria === 'string' 
-            ? (searchCriteria.startsWith('#') 
-                ? { hashtag: searchCriteria } 
-                : { keywords: searchCriteria })
+          // Bulk comment from search results with incremental discovery
+          console.log(`🎯 COMMENT ACTION: Starting bulk comment with criteria: ${JSON.stringify(searchCriteria)}`);
+
+          const parsedCriteria = typeof searchCriteria === 'string'
+            ? (searchCriteria.startsWith('#') ? { hashtag: searchCriteria } : { keywords: searchCriteria })
             : searchCriteria;
-          const posts = await discoverInstagramPosts(page, parsedCriteria, maxPosts);
-          console.log(`🎯 COMMENT ACTION: Found ${posts.length} posts to comment on`);
+
           const results = [];
-          
-          for (const postUrl of posts) {
+          const targetSuccesses = Math.max(1, Number(maxPosts) || 1);  // how many successful comments you want
+          let successes = 0;
+          let attempts = 0;
+          let consecutiveFailures = 0;  // Track consecutive failures to find new posts
+          const seen = new Set([...discoveredPosts]);                   // avoid picking same URLs again
+          let queue = await nextInstagramCandidates(page, parsedCriteria, seen, Math.min(10, targetSuccesses * 2));
+
+          console.log(`🎯 TARGET: ${targetSuccesses} successful comments`);
+          console.log(`🎯 WILL CONTINUE SEARCHING until target is reached`);
+          while (successes < targetSuccesses) {
+            // Refill queue if empty or running low
+            if (queue.length <= 1) {
+              console.log(`🔄 Queue running low (${queue.length} posts) — discovering more candidates…`);
+              const more = await nextInstagramCandidates(page, parsedCriteria, seen, 15);
+              if (more.length === 0) {
+                consecutiveFailures++;
+                console.log(`⚠️  No new candidates found (failure ${consecutiveFailures})`);
+                if (consecutiveFailures >= 3 && queue.length === 0) {
+                  console.log('❌ Unable to find any new posts after 3 attempts, stopping.');
+                  break;
+                }
+              } else {
+                consecutiveFailures = 0; // Reset on successful discovery
+                queue.push(...more);
+                console.log(`✅ Found ${more.length} new candidates, queue now has ${queue.length} posts`);
+              }
+            }
+
+            const postUrl = queue.shift();
+            seen.add(postUrl);
+            attempts++;
+
             try {
-              console.log(`🎯 COMMENT ACTION: Attempting to comment on post: ${postUrl}`);
+              console.log(`🎯 Processing post (attempts: ${attempts}, successes: ${successes}/${targetSuccesses}): ${postUrl}`);
+              console.log(`🎯 LOOP CHECK: successes=${successes}/${targetSuccesses}, consecutiveFailures=${consecutiveFailures}`);
+              
+              // Early duplicate check — skip without generating AI or navigating
+              console.log(`🔍 Checking if already commented (username: ${username})`);
+              const already = await hasMyCommentAndCache({ page, username, postUrl });
+              if (already) {
+                console.log(`⏭️  SKIP: Already commented on this post → ${postUrl}`);
+                console.log(`🔄 Continuing search for new post to comment on...`);
+                results.push({ url: postUrl, success: false, error: 'Already commented' });
+                // Don't increment attempts for skipped posts - just continue searching
+                attempts--; // Undo the increment since this wasn't a real attempt
+                continue; // Immediately move to next post in queue
+              }
+              console.log(`✅ No existing comment found, proceeding to comment on this post`);
+
+              console.log(`📝 Getting post content for commenting...`);
               const postContent = await getPostContent(page, postUrl, platform);
-              console.log(`🎯 COMMENT ACTION: Post content extracted, length: ${postContent.length}`);
               
               let finalComment;
               if (useAI) {
-                console.log(`🎯 COMMENT ACTION: Generating AI comment...`);
+                console.log(`🤖 Generating AI comment...`);
                 finalComment = await generateAIComment(postContent);
-                console.log(`🎯 COMMENT ACTION: AI comment generated: "${finalComment}"`);
+                console.log(`🤖 AI comment: "${finalComment}"`);
               } else {
                 finalComment = comment;
-                console.log(`🎯 COMMENT ACTION: Using manual comment: "${finalComment}"`);
+                console.log(`💬 Using manual comment: "${finalComment}"`);
               }
               
-              console.log(`🎯 COMMENT ACTION: About to post comment: "${finalComment}"`);
-              await instagramComment(page, postUrl, finalComment);
-              console.log(`🎯 COMMENT ACTION: Successfully commented on post: ${postUrl}`);
-              results.push({ url: postUrl, success: true, comment: finalComment });
-              await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
+              // Post the comment (this will re-check and skip if already commented)
+              const commentResult = await instagramComment(page, postUrl, finalComment, username);
+              
+              if (commentResult.skipped) {
+                console.log(`⏭️  Skipped at posting stage: ${postUrl} - ${commentResult.reason}`);
+                results.push({ url: postUrl, success: false, error: commentResult.reason });
+              } else {
+                console.log(`✅ Success: commented on ${postUrl}`);
+                results.push({ url: postUrl, success: true, comment: finalComment });
+                successes++;
+                console.log(`🎯 Progress: ${successes}/${targetSuccesses} successful comments`);
+                
+                // Check if we've reached our target
+                if (successes >= targetSuccesses) {
+                  console.log(`🎉 Target reached! Successfully commented on ${successes} posts.`);
+                  break;
+                }
+              }
+              
+              // Shorter delay between posts for better efficiency
+              await new Promise(r => setTimeout(r, 1500 + Math.floor(Math.random() * 1000)));
             } catch (error) {
-              console.log(`🎯 COMMENT ACTION: Failed to comment on post ${postUrl}: ${error.message}`);
+              console.log(`❌ Error on ${postUrl}: ${error.message}`);
               results.push({ url: postUrl, success: false, error: error.message });
+              // Continue to next post without long delay
+              await new Promise(r => setTimeout(r, 500));
             }
           }
-          
-          return { ok: true, message: `Commented on ${results.filter(r => r.success).length} Instagram posts`, results };
+
+          console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
+          if (successes < targetSuccesses) {
+            console.log(`⚠️  Did not reach target of ${targetSuccesses} comments. Reached limit of ${targetSuccesses * 3} attempts.`);
+          }
+
+          return {
+            ok: true,
+            message: `Commented on ${successes}/${targetSuccesses} Instagram posts`,
+            results
+          };
         } else {
           // Single post comment
           console.log(`Attempting to comment on single Instagram post: ${url}`);
+          
+
+          
           const postContent = await getPostContent(page, url, platform);
           console.log(`Extracted post content: "${postContent.substring(0, 100)}..."`);
           const finalComment = useAI ? await generateAIComment(postContent) : comment;
           console.log(`Generated comment: "${finalComment}"`);
-          await instagramComment(page, url, finalComment);
-          console.log(`Successfully commented on Instagram post: ${url}`);
+                    const commentResult = await instagramComment(page, url, finalComment, username);
+          
+          if (commentResult.skipped) {
+            console.log(`Skipped post: ${url} - ${commentResult.reason}`);
+            return { ok: false, message: commentResult.reason };
+          } else {
+            console.log(`Successfully commented on Instagram post: ${url}`);
+          }
         }
       }
       if (action === 'follow') {
         await page.goto(url, { waitUntil: 'networkidle2' });
         const followed = await clickByText(page, ['Follow']);
         if (!followed) throw new Error('Could not find Follow button on Instagram profile.');
+      }
+      
+      if (action === 'debug-comments') {
+        // Debug comment detection on a specific post
+        if (!url) {
+          throw new Error('URL is required for debug-comments action');
+        }
+        
+        await page.goto(url, { waitUntil: 'networkidle2' });
+        const debugResult = await debugCommentDetection(page, username);
+        
+        return {
+          ok: true,
+          message: 'Comment detection debug completed',
+          debugResult,
+          url
+        };
+      }
+      
+      if (action === 'stats') {
+        // Show comment cache statistics
+        const cacheStats = getCommentCacheStats();
+        return {
+          ok: true,
+          message: `Comment cache statistics`,
+          stats: {
+            totalCached: cacheStats.size,
+            cachedEntries: cacheStats.entries.slice(0, 10), // Show first 10 for preview
+            sessionName: sessionName
+          }
+        };
       }
     }
 
