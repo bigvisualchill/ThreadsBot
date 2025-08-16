@@ -17,9 +17,7 @@
 ### Key Features
 
 1. **Automated Actions**:
-   - Comment on posts with AI-generated or manual text (with optional liking)
-   - Follow users
-   - Discover and analyze posts
+   - Auto-comment on posts with AI-generated or manual text (with optional liking)
 
 2. **AI Integration**:
    - OpenAI Assistants API for contextual comment generation
@@ -78,12 +76,17 @@
 - **Optional Liking**: Added checkbox option to like posts when commenting for enhanced engagement
 - **Simplified Interface**: Removed separate "Like Posts" action to reduce complexity and improve user experience
 
+### Interface Simplification Phase
+- **Streamlined Actions**: Removed multiple action types (Discover, Debug, separate Comment options)
+- **Focus on Core Function**: Simplified to single auto-comment workflow with optional liking
+- **Reduced Complexity**: Eliminated action dropdown and tips sections for cleaner, more focused interface
+
 ### Current State
 The application is feature-complete with:
 - Stable multi-platform automation
-- Intelligent AI-powered commenting with optional liking
+- Intelligent AI-powered auto-commenting with optional liking
 - Robust session and account management
-- Professional web interface with streamlined actions
+- Clean, simplified web interface focused on core functionality
 - Comprehensive error handling and logging
 - Advanced duplicate prevention
 - Rate limiting and safety features

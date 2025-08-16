@@ -1558,17 +1558,11 @@ export async function runAction(options) {
     if (!platform || !['instagram', 'x'].includes(platform)) {
       throw new Error('Invalid or missing platform');
     }
-    if (!action || !['login', 'like', 'comment', 'follow', 'discover', 'auto-comment', 'check-session', 'logout', 'debug-comments'].includes(action)) {
+    if (!action || !['login', 'auto-comment', 'check-session', 'logout'].includes(action)) {
       throw new Error('Invalid or missing action');
     }
-    if (['like', 'comment', 'follow'].includes(action) && !url && !searchCriteria) {
-      throw new Error('url is required for like/comment/follow (or use search criteria for bulk operations)');
-    }
-    if (action === 'comment' && !comment && !useAI) {
-      throw new Error('comment is required for comment action (or enable AI)');
-    }
-    if (['discover', 'auto-comment'].includes(action) && !searchCriteria) {
-      throw new Error('searchCriteria is required for discover/auto-comment actions');
+    if (action === 'auto-comment' && !searchCriteria) {
+      throw new Error('searchCriteria is required for auto-comment action');
     }
 
     // Launch browser
@@ -1791,7 +1785,8 @@ export async function runAction(options) {
         return {
           ok: true,
           message: `Commented on ${successes}/${targetSuccesses} posts`,
-          results
+          results,
+          attempts
         };
       }
 

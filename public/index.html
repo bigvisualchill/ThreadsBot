@@ -527,35 +527,15 @@
 
             <!-- Auto Comment Tab -->
             <div id="auto-comment" class="tab-content">
-                <div class="tips">
-                    <h3>💡 Auto-Comment Tips</h3>
-                    <ul>
-                        <li>Make sure you're logged in before running auto-comments</li>
-                        <li>Use AI for intelligent, contextual comments</li>
-                        <li>Start with a small number of posts to test</li>
-                        <li>Use dry-run first to see what would happen</li>
-                    </ul>
-                </div>
 
                 <div class="section" id="searchSection">
                     <h3>🎯 Target Selection</h3>
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="autoActiveSession">Account to Use</label>
-                            <select id="autoActiveSession">
-                                <option value="">Select an account</option>
-                            </select>
-                            <small>Choose which logged-in account to use</small>
-                        </div>
-                        <div class="form-group">
-                            <label for="action">Action Type</label>
-                            <select id="action">
-                                <option value="comment">💬 Comment on Posts</option>
-                                <option value="auto-comment">🤖 Auto-Comment Multiple Posts</option>
-                                <option value="discover">🔍 Discover Posts Only</option>
-                                <option value="debug-comments">🔧 Debug Comment Detection</option>
-                            </select>
-                        </div>
+                    <div class="form-group">
+                        <label for="autoActiveSession">Account to Use</label>
+                        <select id="autoActiveSession">
+                            <option value="">Select an account</option>
+                        </select>
+                        <small>Choose which logged-in account to use</small>
                     </div>
                     
                     <div class="row">
@@ -698,15 +678,12 @@
                 if (aiSection) aiSection.style.display = 'block';
                 if (commentSection) commentSection.style.display = 'block';
                 
-                // Update visibility based on form values
-                const action = document.getElementById('action')?.value;
-                const useAI = document.getElementById('useAI')?.checked;
-                
+                // Always show all sections since we only have auto-comment functionality
                 if (aiSection) {
-                    aiSection.style.display = 'block'; // Always show AI section
+                    aiSection.style.display = 'block';
                 }
                 if (commentSection) {
-                    commentSection.style.display = (action === 'comment' || action === 'auto-comment') ? 'block' : 'block'; // Always show for now
+                    commentSection.style.display = 'block';
                 }
             }
             
@@ -799,7 +776,6 @@
         }
 
         // Event listeners
-        document.getElementById('action').addEventListener('change', updateUI);
         document.getElementById('useAI').addEventListener('change', updateUI);
         document.getElementById('checkSessionBtn').addEventListener('click', checkSession);
         document.getElementById('loginBtn').addEventListener('click', login);
@@ -954,7 +930,7 @@
                 return;
             }
 
-            const action = document.getElementById('action').value;
+            const action = 'auto-comment'; // Hardcoded to auto-comment functionality
             const hashtag = document.getElementById('hashtag').value.trim();
             const keywords = document.getElementById('keywords').value.trim();
             const maxPosts = parseInt(document.getElementById('maxPosts').value) || 5;
@@ -967,17 +943,12 @@
             const platform = document.getElementById('autoPlatform').value;
 
             // Validation
-            if (!action) {
-                updateStatus('Please select an action', 'error');
-                return;
-            }
-
-            if (['discover', 'auto-comment', 'comment'].includes(action) && !hashtag && !keywords) {
+            if (!hashtag && !keywords) {
                 updateStatus('Please enter hashtag or keywords for search', 'error');
                 return;
             }
 
-            if (action === 'comment' && !comment && !useAI) {
+            if (!comment && !useAI) {
                 updateStatus('Please enter a comment or enable AI', 'error');
                 return;
             }
@@ -1036,7 +1007,8 @@
                         updateStatus(`✅ Found ${result.posts.length} posts: ${result.message}`, 'success');
                     } else if (result.results) {
                         const successCount = result.results.filter(r => r.success).length;
-                        updateStatus(`✅ Action completed: ${successCount}/${result.results.length} successful`, 'success');
+                        const attemptCount = result.attempts || result.results.length;
+                        updateStatus(`✅ Action completed: ${successCount}/${attemptCount} successful`, 'success');
                     } else {
                         updateStatus(`✅ ${result.message}`, 'success');
                     }
