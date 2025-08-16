@@ -1526,6 +1526,7 @@ export async function runAction(options) {
     searchCriteria,
     maxPosts = 5,
     useAI = false,
+    likePost = false,
   } = options;
 
   console.log(`runAction called with action: ${action}, platform: ${platform}, sessionName: ${sessionName}`);
@@ -1745,7 +1746,20 @@ export async function runAction(options) {
               results.push({ url: postUrl, success: false, error: commentResult.reason });
             } else {
               console.log(`✅ SUCCESS: commented on ${postUrl}`);
-              results.push({ url: postUrl, success: true, comment: aiComment });
+              
+              // Like the post if requested
+              if (likePost) {
+                try {
+                  console.log(`❤️ Also liking post: ${postUrl}`);
+                  await instagramLike(page, postUrl);
+                  console.log(`✅ Successfully liked post: ${postUrl}`);
+                } catch (likeError) {
+                  console.log(`⚠️ Failed to like post ${postUrl}: ${likeError.message}`);
+                  // Don't fail the whole operation if like fails
+                }
+              }
+              
+              results.push({ url: postUrl, success: true, comment: aiComment, liked: likePost });
               successes++;
               console.log(`🎯 PROGRESS: ${successes}/${targetSuccesses} successful comments`);
               
@@ -1901,7 +1915,20 @@ export async function runAction(options) {
                 results.push({ url: postUrl, success: false, error: commentResult.reason });
               } else {
                 console.log(`✅ Success: commented on ${postUrl}`);
-                results.push({ url: postUrl, success: true, comment: finalComment });
+                
+                // Like the post if requested
+                if (likePost) {
+                  try {
+                    console.log(`❤️ Also liking post: ${postUrl}`);
+                    await instagramLike(page, postUrl);
+                    console.log(`✅ Successfully liked post: ${postUrl}`);
+                  } catch (likeError) {
+                    console.log(`⚠️ Failed to like post ${postUrl}: ${likeError.message}`);
+                    // Don't fail the whole operation if like fails
+                  }
+                }
+                
+                results.push({ url: postUrl, success: true, comment: finalComment, liked: likePost });
                 successes++;
                 console.log(`🎯 Progress: ${successes}/${targetSuccesses} successful comments`);
                 
@@ -1942,13 +1969,25 @@ export async function runAction(options) {
           console.log(`Extracted post content: "${postContent.substring(0, 100)}..."`);
           const finalComment = useAI ? await generateAIComment(postContent) : comment;
           console.log(`Generated comment: "${finalComment}"`);
-                    const commentResult = await instagramComment(page, url, finalComment, username);
+          const commentResult = await instagramComment(page, url, finalComment, username);
           
           if (commentResult.skipped) {
             console.log(`Skipped post: ${url} - ${commentResult.reason}`);
             return { ok: false, message: commentResult.reason };
           } else {
             console.log(`Successfully commented on Instagram post: ${url}`);
+            
+            // Like the post if requested
+            if (likePost) {
+              try {
+                console.log(`❤️ Also liking post: ${url}`);
+                await instagramLike(page, url);
+                console.log(`✅ Successfully liked post: ${url}`);
+              } catch (likeError) {
+                console.log(`⚠️ Failed to like post ${url}: ${likeError.message}`);
+                // Don't fail the whole operation if like fails
+              }
+            }
           }
         }
       }

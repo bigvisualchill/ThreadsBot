@@ -17,8 +17,7 @@
 ### Key Features
 
 1. **Automated Actions**:
-   - Like posts based on hashtags or keywords
-   - Comment on posts with AI-generated or manual text
+   - Comment on posts with AI-generated or manual text (with optional liking)
    - Follow users
    - Discover and analyze posts
 
@@ -74,12 +73,17 @@
 - **Session Management UI**: Created intuitive account management interface
 - **Mobile Responsiveness**: Ensured compatibility across different screen sizes
 
+### UI Enhancement Phase
+- **Combined Actions**: Streamlined UI by combining Like and Comment actions into a single workflow
+- **Optional Liking**: Added checkbox option to like posts when commenting for enhanced engagement
+- **Simplified Interface**: Removed separate "Like Posts" action to reduce complexity and improve user experience
+
 ### Current State
 The application is feature-complete with:
 - Stable multi-platform automation
-- Intelligent AI-powered commenting
+- Intelligent AI-powered commenting with optional liking
 - Robust session and account management
-- Professional web interface
+- Professional web interface with streamlined actions
 - Comprehensive error handling and logging
 - Advanced duplicate prevention
 - Rate limiting and safety features

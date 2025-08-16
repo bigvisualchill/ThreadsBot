@@ -550,7 +550,6 @@
                         <div class="form-group">
                             <label for="action">Action Type</label>
                             <select id="action">
-                                <option value="like">❤️ Like Posts</option>
                                 <option value="comment">💬 Comment on Posts</option>
                                 <option value="auto-comment">🤖 Auto-Comment Multiple Posts</option>
                                 <option value="discover">🔍 Discover Posts Only</option>
@@ -606,6 +605,12 @@
                         <label for="comment">Manual Comment (if not using AI)</label>
                         <textarea id="comment" class="form-control" rows="3" 
                                   placeholder="Enter your comment here... (or use AI above)"></textarea>
+                    </div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="likePost">
+                            <span>❤️ Also like the post when commenting</span>
+                        </label>
                     </div>
                 </div>
 
@@ -956,6 +961,7 @@
             const useAI = document.getElementById('useAI').checked;
 
             const comment = document.getElementById('comment').value.trim();
+            const likePost = document.getElementById('likePost').checked;
             const headful = document.getElementById('autoHeadful').checked;
             const dryRun = document.getElementById('autoDryRun').checked;
             const platform = document.getElementById('autoPlatform').value;
@@ -1008,6 +1014,7 @@
                     maxPosts,
                     useAI,
                     comment,
+                    likePost,
                     headful,
                     dryRun
                 };

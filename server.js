@@ -53,6 +53,7 @@ app.post('/run', async (req, res) => {
     maxPosts = 5,
     useAI = false,
     aiContext = '',
+    likePost = false,
   } = req.body || {};
 
   // Use environment variables if username/password not provided in request
@@ -81,6 +82,7 @@ app.post('/run', async (req, res) => {
       maxPosts: parseInt(maxPosts, 10),
       useAI: Boolean(useAI),
       aiContext: aiContext || '',
+      likePost: Boolean(likePost),
     });
     
     console.log('runAction completed with result:', { ok: result.ok, message: result.message });
