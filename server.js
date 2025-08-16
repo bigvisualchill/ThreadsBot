@@ -47,7 +47,6 @@ app.post('/run', async (req, res) => {
     username: requestUsername,
     password: requestPassword,
     headful = false,
-    dryRun = false,
     sessionName = 'default',
     searchCriteria,
     maxPosts = 5,
@@ -57,8 +56,8 @@ app.post('/run', async (req, res) => {
   } = req.body || {};
 
   // Use environment variables if username/password not provided in request
-  const envUser = platform === 'instagram' ? process.env.INSTAGRAM_USERNAME : process.env.X_USERNAME;
-  const envPass = platform === 'instagram' ? process.env.INSTAGRAM_PASSWORD : process.env.X_PASSWORD;
+  const envUser = (platform === 'instagram' || platform === 'threads') ? process.env.INSTAGRAM_USERNAME : process.env.X_USERNAME;
+  const envPass = (platform === 'instagram' || platform === 'threads') ? process.env.INSTAGRAM_PASSWORD : process.env.X_PASSWORD;
   const username = requestUsername || envUser;
   const password = requestPassword || envPass;
 
@@ -76,7 +75,6 @@ app.post('/run', async (req, res) => {
       username,
       password,
       headful: Boolean(headful),
-      dryRun: Boolean(dryRun),
       sessionName: sessionName || 'default',
       searchCriteria,
       maxPosts: parseInt(maxPosts, 10),

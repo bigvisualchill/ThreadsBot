@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -28,7 +28,7 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8e44ad 0%, #e67e22 100%);
             color: white;
             padding: 30px;
             text-align: center;
@@ -69,12 +69,12 @@
         }
 
         .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
+            color: #8e44ad;
+            border-bottom-color: #8e44ad;
         }
 
         .tab:hover {
-            color: #667eea;
+            color: #8e44ad;
         }
 
         .tab-content {
@@ -86,7 +86,7 @@
         }
 
         .form-group {
-            margin-bottom: 25px;
+            margin-bottom: 15px;
         }
 
         .form-group label {
@@ -118,8 +118,8 @@
         .form-group select:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #8e44ad;
+            box-shadow: 0 0 0 3px rgba(142, 68, 173, 0.1);
         }
 
         .form-group input[type="text"]::placeholder,
@@ -147,7 +147,7 @@
         }
 
         .checkbox-group {
-            margin-bottom: 25px;
+            margin-bottom: 15px;
         }
 
         .checkbox-group label {
@@ -170,8 +170,8 @@
         .row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 25px;
+            gap: 15px;
+            margin-bottom: 15px;
         }
 
         .checkbox-item {
@@ -187,6 +187,43 @@
             accent-color: #667eea;
         }
 
+        .run-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .run-section input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #8e44ad;
+        }
+
+        .run-section label {
+            font-weight: 500;
+            color: #374151;
+            margin: 0;
+        }
+
+        .form-group:has(button) {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .form-group:has(button) input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #8e44ad;
+        }
+
+        .form-group:has(button) label {
+            font-weight: 500;
+            color: #374151;
+            margin: 0;
+        }
+
         .btn {
             display: inline-block;
             padding: 12px 24px;
@@ -199,16 +236,23 @@
             transition: all 0.3s ease;
             text-align: center;
             min-width: 120px;
+            background: linear-gradient(135deg, #8e44ad 0%, #e67e22 100%);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(142, 68, 173, 0.3);
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8e44ad 0%, #e67e22 100%);
             color: white;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 8px 25px rgba(142, 68, 173, 0.3);
         }
 
         .btn-secondary {
@@ -288,14 +332,14 @@
 
         .tips {
             background: #f8f9fa;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #8e44ad;
             padding: 15px;
             margin-bottom: 25px;
             border-radius: 0 8px 8px 0;
         }
 
         .tips h3 {
-            color: #667eea;
+            color: #8e44ad;
             margin-bottom: 8px;
             font-size: 1rem;
         }
@@ -313,7 +357,7 @@
 
         .tips li:before {
             content: "•";
-            color: #667eea;
+            color: #8e44ad;
             font-weight: bold;
             margin-right: 8px;
         }
@@ -321,20 +365,20 @@
         .section {
             background: white;
             border-radius: 12px;
-            padding: 30px;
-            margin-bottom: 25px;
+            padding: 20px;
+            margin-bottom: 15px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             border: 1px solid #f1f5f9;
         }
 
         .section h3 {
             margin-top: 0;
-            margin-bottom: 25px;
+            margin-bottom: 15px;
             color: #1f2937;
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             font-weight: 700;
             border-bottom: 2px solid #f3f4f6;
-            padding-bottom: 12px;
+            padding-bottom: 8px;
         }
 
         .section:last-child {
@@ -441,28 +485,19 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 Social Media Bot</h1>
+            <h1>Social Media Bot</h1>
             <p>Automate your social media interactions with AI-powered intelligence</p>
         </div>
         
         <div class="content">
             <!-- Tab Navigation -->
             <div class="tabs">
-                <button class="tab active" data-tab="login">🔐 Login & Setup</button>
-                <button class="tab" data-tab="auto-comment">🤖 Auto Comment</button>
+                <button class="tab active" data-tab="login">Login & Setup</button>
+                <button class="tab" data-tab="auto-comment">Auto Comment</button>
             </div>
 
             <!-- Login Tab -->
             <div id="login" class="tab-content active">
-                <div class="tips">
-                    <h3>💡 Login Tips</h3>
-                    <ul>
-                        <li>Login once and your session will be saved automatically</li>
-                        <li>Use headful mode for login to handle 2FA if needed</li>
-                        <li>You can manage multiple sessions with different names</li>
-                        <li>Check your login status before running auto-comments</li>
-                    </ul>
-                </div>
 
                 <div class="form-group">
           <label for="platform">Platform:</label>
@@ -470,6 +505,7 @@
             <option value="">Select Platform</option>
             <option value="instagram">Instagram</option>
             <option value="x">X (Twitter)</option>
+            <option value="threads">Threads</option>
           </select>
         </div>
 
@@ -490,19 +526,9 @@
         </div>
 
         <div class="form-group">
-          <label for="headful">Show Browser:</label>
-          <input type="checkbox" id="headful" name="headful">
-          <small>Check to see the browser while it works</small>
-        </div>
-
-        <div class="form-group">
-          <label for="dryRun">Dry Run:</label>
-          <input type="checkbox" id="dryRun" name="dryRun">
-          <small>Test without actually performing actions</small>
-        </div>
-
-        <div class="form-group">
           <button type="button" id="loginBtn" class="btn btn-primary">Login & Save Session</button>
+          <input type="checkbox" id="headful" name="headful">
+          <label for="headful">Headful Mode (Run in browser)</label>
         </div>
 
         <!-- Session Management Section -->
@@ -527,16 +553,17 @@
 
             <!-- Auto Comment Tab -->
             <div id="auto-comment" class="tab-content">
+                
+                <div class="form-group">
+                    <label for="autoActiveSession">Account to Use</label>
+                    <select id="autoActiveSession">
+                        <option value="">Select an account</option>
+                    </select>
+                    <small>Choose which logged-in account to use</small>
+                </div>
 
                 <div class="section" id="searchSection">
-                    <h3>🎯 Target Selection</h3>
-                    <div class="form-group">
-                        <label for="autoActiveSession">Account to Use</label>
-                        <select id="autoActiveSession">
-                            <option value="">Select an account</option>
-                        </select>
-                        <small>Choose which logged-in account to use</small>
-                    </div>
+                    <h3>Target Selection</h3>
                     
                     <div class="row">
                         <div class="form-group">
@@ -549,6 +576,7 @@
                             <select id="autoPlatform">
                                 <option value="instagram">Instagram</option>
                                 <option value="x">X (Twitter)</option>
+                                <option value="threads">Threads</option>
                             </select>
                             <small>Which platform to use</small>
                         </div>
@@ -568,47 +596,30 @@
                     </div>
                 </div>
 
-                <div class="section" id="aiSection">
-                    <h3>🤖 AI-Powered Comments</h3>
+                <div class="section" id="commentSection">
+                    <h3>Comment Settings</h3>
                     <div class="checkbox-group">
                         <label class="checkbox-item">
+                            <input type="checkbox" id="likePost">
+                            <span>❤️ Like Post</span>
+                        </label>
+                        <label class="checkbox-item">
                             <input type="checkbox" id="useAI">
-                            <span>Use AI to generate comments</span>
+                            <span>AI generated comments</span>
                         </label>
                     </div>
-
-                </div>
-
-                <div class="section" id="commentSection">
-                    <h3>💬 Comment Settings</h3>
                     <div class="form-group">
                         <label for="comment">Manual Comment (if not using AI)</label>
                         <textarea id="comment" class="form-control" rows="3" 
                                   placeholder="Enter your comment here... (or use AI above)"></textarea>
                     </div>
-                    <div class="checkbox-group">
-                        <label class="checkbox-item">
-                            <input type="checkbox" id="likePost">
-                            <span>❤️ Also like the post when commenting</span>
-                        </label>
-                    </div>
                 </div>
 
-                <div class="section">
-                    <h3>⚙️ Options</h3>
-                    <div class="checkbox-group">
-                        <label class="checkbox-item">
-                            <input type="checkbox" id="autoHeadful">
-                            <span>Headful Mode (show browser)</span>
-                        </label>
-                        <label class="checkbox-item">
-                            <input type="checkbox" id="autoDryRun">
-                            <span>Dry Run (test only)</span>
-                        </label>
-                    </div>
+                <div class="run-section">
+                    <button id="runBtn" class="btn">Run Action</button>
+                    <input type="checkbox" id="autoHeadful">
+                    <label for="autoHeadful">Headful Mode (Run in browser)</label>
                 </div>
-
-                <button id="runBtn" class="btn">🚀 Run Action</button>
             </div>
 
             <div id="status" class="status"></div>
@@ -806,6 +817,18 @@
                 return;
             }
 
+            // Get platform for this session
+            let platform = 'instagram'; // default
+            try {
+                const sessionData = localStorage.getItem(`session_${activeSession}`);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    platform = parsed.platform || 'instagram';
+                }
+            } catch (error) {
+                console.log('Could not get platform from session data, using default');
+            }
+
             updateSessionStatus('Checking session status...', 'loading');
             
             try {
@@ -814,16 +837,16 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'check-session',
-                        platform: 'instagram', // Add platform parameter
+                        platform: platform,
                         sessionName: activeSession
                     })
                 });
                 
                 const result = await response.json();
-                if (result.ok) {
-                    updateSessionStatus(`✅ ${activeSession} is logged in`, 'success');
+                if (result.ok && result.loggedIn) {
+                    updateSessionStatus(`✅ ${activeSession} (${platform}) is logged in`, 'success');
                 } else {
-                    updateSessionStatus(`❌ ${activeSession} is not logged in`, 'error');
+                    updateSessionStatus(`❌ ${activeSession} (${platform}) is not logged in`, 'error');
                 }
             } catch (error) {
                 updateSessionStatus('Error checking session: ' + error.message, 'error');
@@ -836,7 +859,7 @@
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             const headful = document.getElementById('headful').checked;
-            const dryRun = document.getElementById('dryRun').checked;
+
 
             if (!platform || !sessionName) {
                 updateSessionStatus('Please fill in platform and account name', 'error');
@@ -855,8 +878,7 @@
                         sessionName,
                         username,
                         password,
-                        headful,
-                        dryRun
+                        headful
                     })
                 });
                 
@@ -887,6 +909,18 @@
                 return;
             }
 
+            // Get platform for this session
+            let platform = 'instagram'; // default
+            try {
+                const sessionData = localStorage.getItem(`session_${activeSession}`);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    platform = parsed.platform || 'instagram';
+                }
+            } catch (error) {
+                console.log('Could not get platform from session data, using default');
+            }
+
             updateSessionStatus('Logging out...', 'loading');
             
             try {
@@ -895,6 +929,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'logout',
+                        platform: platform,
                         sessionName: activeSession
                     })
                 });
@@ -939,7 +974,6 @@
             const comment = document.getElementById('comment').value.trim();
             const likePost = document.getElementById('likePost').checked;
             const headful = document.getElementById('autoHeadful').checked;
-            const dryRun = document.getElementById('autoDryRun').checked;
             const platform = document.getElementById('autoPlatform').value;
 
             // Validation
@@ -986,8 +1020,7 @@
                     useAI,
                     comment,
                     likePost,
-                    headful,
-                    dryRun
+                    headful
                 };
 
                 console.log('🎯 WEB UI: Sending payload to server:', payload);
@@ -1001,9 +1034,7 @@
                 const result = await response.json();
 
                 if (result.ok) {
-                    if (result.dryRun) {
-                        updateStatus(`✅ Dry run completed: ${result.message}`, 'success');
-                    } else if (result.posts) {
+                    if (result.posts) {
                         updateStatus(`✅ Found ${result.posts.length} posts: ${result.message}`, 'success');
                     } else if (result.results) {
                         const successCount = result.results.filter(r => r.success).length;
