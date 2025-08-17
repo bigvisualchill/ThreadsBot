@@ -2251,8 +2251,8 @@ async function ensureXLoggedIn(page, { username, password }) {
   }
 }
 
-// Helper function to click back arrow and return to search results
-async function clickBackToSearch(page, searchUrl) {
+// Helper function to click back arrow and return to search results, optionally with keyboard navigation
+async function clickBackToSearch(page, searchUrl, navigateNext = false) {
   try {
     // Look for the back arrow button using the SVG path
     const backButton = await page.$('svg path[d="M7.414 13l5.043 5.04-1.414 1.42L3.586 12l7.457-7.46 1.414 1.42L7.414 11H21v2H7.414z"]');
@@ -2270,6 +2270,20 @@ async function clickBackToSearch(page, searchUrl) {
       if (clickableParent) {
         await clickableParent.click();
         console.log('✅ Successfully clicked back arrow');
+        
+        // Wait for navigation to complete
+        await sleep(1500);
+        
+        // Optionally use keyboard navigation to move to next tweet
+        if (navigateNext) {
+          console.log('⌨️ Using keyboard navigation: pressing "j" to navigate to next tweet...');
+          await page.keyboard.press('j');
+          await sleep(300);
+          console.log('✅ Keyboard navigation complete');
+        } else {
+          console.log('✅ Staying on search results page');
+        }
+        
         return true;
       } else {
         throw new Error('Could not find clickable back button parent');
@@ -2314,19 +2328,19 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
     
     console.log('🐦 Starting keyboard navigation through search results...');
     
-    while (successfulComments < maxPosts && currentPost < maxPosts * 3) { // Safety limit
+    while (successfulComments < maxPosts && currentPost < 50) { // Reasonable safety limit to prevent infinite loops
       currentPost++;
       console.log(`\n🐦 [${currentPost}] Processing post ${currentPost} (${successfulComments}/${maxPosts} completed)`);
       
       try {
-        // Step 1: Use 'k' to advance to next result
+        // Step 1: Use 'j' to advance to next result
         if (currentPost > 1) {
-          console.log('⌨️ Pressing "k" to advance to next post...');
-          await page.keyboard.press('k');
+          console.log('⌨️ Pressing "j" to advance to next post...');
+          await page.keyboard.press('j');
           await sleep(500);
         } else {
-          console.log('⌨️ Pressing "k" to select first post...');
-          await page.keyboard.press('k');
+          console.log('⌨️ Pressing "j" to select first post...');
+          await page.keyboard.press('j');
           await sleep(500);
         }
         
@@ -2337,26 +2351,39 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         // Step 3: Check if my username has already commented
         console.log(`🔍 Checking if ${username} has already commented...`);
+        
+        // Look specifically for reply tweets from our username in the thread
         const hasMyComment = await page.evaluate((username) => {
-          // Look for username in comments
-          const commentElements = document.querySelectorAll('[data-testid="tweetText"]');
-          const userLinks = document.querySelectorAll(`a[href="/${username}"]`);
-          const userMentions = document.querySelectorAll(`a[href*="/${username}"]`);
+          // Look for replies specifically from our username
+          const replyElements = document.querySelectorAll('[data-testid="tweetText"]');
+          let foundMyReply = false;
           
-          console.log(`Found ${commentElements.length} comment elements`);
-          console.log(`Found ${userLinks.length} user links for ${username}`);
-          console.log(`Found ${userMentions.length} user mentions for ${username}`);
+          replyElements.forEach(element => {
+            // Check if this tweet is from our username by looking at the parent structure
+            const tweetContainer = element.closest('[data-testid="tweet"]');
+            if (tweetContainer) {
+              const usernameLink = tweetContainer.querySelector(`a[href="/${username}"]`);
+              if (usernameLink) {
+                // Check if this is actually a reply (not the original tweet)
+                const isReply = tweetContainer.querySelector('[data-testid="reply"]') || 
+                               tweetContainer.textContent.includes('Replying to');
+                if (isReply || tweetContainer !== replyElements[0]?.closest('[data-testid="tweet"]')) {
+                  foundMyReply = true;
+                }
+              }
+            }
+          });
           
-          // Check if any of these indicate our comment exists
-          return userLinks.length > 1 || userMentions.length > 1; // More than 1 means we commented (1 is the original post author)
+          console.log(`Found my reply: ${foundMyReply}`);
+          return foundMyReply;
         }, username);
         
         if (hasMyComment) {
           console.log(`⏭️ ${username} has already commented on this post, skipping...`);
           
-          // Step 4a: Click back arrow to return to search results (preserving position)
+          // Step 4a: Click back arrow to return to search results (stay on search page)
           console.log('🔙 Clicking back arrow to return to search results...');
-          await clickBackToSearch(page, searchUrl);
+          await clickBackToSearch(page, searchUrl, false);
           await sleep(2000);
           
           results.push({ 
@@ -2387,34 +2414,71 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         console.log(`💬 Commenting: "${finalComment.slice(0, 50)}..."`);
         
-        // Click reply button
-        console.log('🐦 Clicking reply button...');
-        await page.waitForSelector('[data-testid="reply"]', { timeout: 10000 });
-        await page.click('[data-testid="reply"]');
-        await sleep(2000);
+        // Click reply button using robust selector approach
+        console.log('🐦 Waiting for reply button...');
+        await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
         
-        // Find and fill comment textarea
-        console.log('🐦 Finding comment textarea...');
-        const textareaSelector = '[data-testid="tweetTextarea_0"] div[contenteditable="true"]';
-        await page.waitForSelector(textareaSelector, { timeout: 10000 });
+        const replyClicked = await clickFirstMatching(page, [
+          '[data-testid="reply"]',
+          'div[data-testid="reply"]',
+          'button[data-testid="reply"]'
+        ]);
         
-        // Clear and type comment
-        await page.click(textareaSelector);
+        if (!replyClicked) {
+          throw new Error('Could not find or click reply button');
+        }
+        
+        await sleep(2000); // Wait for reply dialog to open
+        
+        // Find and fill comment textarea using robust selector approach
+        console.log('🐦 Looking for comment textarea...');
+        const textareaSelectors = [
+          '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
+          'div[data-testid="tweetTextarea_0"]',
+          'div[contenteditable="true"][data-testid*="textInput"]',
+          'div[contenteditable="true"][role="textbox"]',
+          '[data-testid*="textInput"] div[contenteditable="true"]'
+        ];
+        
+        let textareaFound = false;
+        let textareaElement = null;
+        
+        for (const selector of textareaSelectors) {
+          try {
+            await page.waitForSelector(selector, { timeout: 3000 });
+            textareaElement = await page.$(selector);
+            if (textareaElement) {
+              console.log(`✅ Found textarea with selector: ${selector}`);
+              textareaFound = true;
+              break;
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+        
+        if (!textareaFound || !textareaElement) {
+          throw new Error('Could not find comment textarea');
+        }
+        
+        // Clear and focus textarea
+        await textareaElement.click();
         await sleep(500);
         
-        // Clear existing content
+        // Clear existing content and type comment
         await page.keyboard.down('Meta');
         await page.keyboard.press('a');
         await page.keyboard.up('Meta');
         await page.keyboard.press('Backspace');
+        await sleep(200);
         
-        // Type comment
-        await page.type(textareaSelector, finalComment);
+        // Type comment with proper delay
+        await textareaElement.type(finalComment, { delay: 80 });
         await sleep(1000);
         
-        // Submit with Cmd+Enter
+        // Submit with Cmd+Enter (posts comment and closes box)
         console.log('🐦 Submitting comment with Cmd+Enter...');
-        await page.keyboard.down('Meta');
+        await page.keyboard.down('Meta'); // Cmd key on Mac
         await page.keyboard.press('Enter');
         await page.keyboard.up('Meta');
         
@@ -2429,9 +2493,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           comment: finalComment 
         });
         
-        // Return to search results for next post (preserving position)
-        console.log('🔙 Clicking back arrow to return to search results...');
-        await clickBackToSearch(page, searchUrl);
+        // Return to search results and navigate to next post
+        console.log('🔙 Clicking back arrow to return to search results and navigate to next...');
+        await clickBackToSearch(page, searchUrl, true);
         await sleep(2000);
         
         // Small delay between successful comments
@@ -2443,9 +2507,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
       } catch (error) {
         console.log(`❌ Error processing post ${currentPost}: ${error.message}`);
         
-        // Try to return to search results (preserving position)
+        // Try to return to search results (stay on search page for recovery)
         console.log('🔙 Error recovery: Clicking back arrow to return to search results...');
-        await clickBackToSearch(page, searchUrl);
+        await clickBackToSearch(page, searchUrl, false);
         await sleep(2000);
         
         results.push({ 
