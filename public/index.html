@@ -1141,12 +1141,17 @@
                     username = activeSession;
                 }
 
+                // Build proper search criteria object
+                const searchCriteria = {};
+                if (hashtag) searchCriteria.hashtag = hashtag;
+                if (keywords) searchCriteria.keywords = keywords;
+                
                 const payload = {
                     action,
                     platform,
                     sessionName: activeSession,
                     username: username, // Add username from session
-                    searchCriteria: hashtag || keywords,
+                    searchCriteria,
                     maxPosts,
                     useAI,
                     comment,

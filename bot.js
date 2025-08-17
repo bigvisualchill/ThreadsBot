@@ -2201,15 +2201,38 @@ async function xComment(page, tweetUrl, comment) {
         
         // Clear any existing text and type comment
         await page.click(selector);
+        await sleep(500); // Wait for focus
+        
+        // Clear existing content more thoroughly
         await page.evaluate((sel) => {
           const element = document.querySelector(sel);
           if (element) {
             element.innerHTML = '';
             element.textContent = '';
+            element.value = '';
+            // Trigger focus and selection events
+            element.focus();
+            element.click();
           }
         }, selector);
         
-        await page.type(selector, comment, { delay: 50 });
+        await sleep(300); // Wait for DOM to update after clearing
+        
+        // Select all and delete any remaining content (cross-platform)
+        try {
+          await page.keyboard.down('Meta'); // Cmd+A on Mac
+          await page.keyboard.press('a');
+          await page.keyboard.up('Meta');
+        } catch (e) {
+          // Fallback for Windows/Linux
+          await page.keyboard.down('Control'); // Ctrl+A
+          await page.keyboard.press('a');
+          await page.keyboard.up('Control');
+        }
+        await page.keyboard.press('Backspace');
+        
+        await sleep(200); // Small delay before typing
+        await page.type(selector, comment, { delay: 80 }); // Slightly slower typing
         textareaFound = true;
         break;
       } catch (e) {
@@ -2224,39 +2247,17 @@ async function xComment(page, tweetUrl, comment) {
     
     await sleep(1000);
     
-    // Click tweet/reply button
-    console.log('🐦 Clicking tweet button...');
-    const tweetButtonSelectors = [
-      'div[data-testid="tweetButtonInline"]',
-      'div[data-testid="tweetButton"]',
-      'button[data-testid="tweetButtonInline"]',
-      'button[data-testid="tweetButton"]',
-      '[role="button"][data-testid*="tweet"]'
-    ];
+    // Submit reply using Cmd+Enter (much more reliable than button clicking)
+    console.log('🐦 Submitting reply with Cmd+Enter...');
+    await page.keyboard.down('Meta'); // Cmd key on Mac
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Meta');
     
-    let buttonClicked = false;
-    for (const selector of tweetButtonSelectors) {
-      try {
-        const clicked = await clickFirstMatching(page, [selector]);
-        if (clicked) {
-          console.log(`🐦 Successfully clicked button: ${selector}`);
-          buttonClicked = true;
-          break;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-    
-    // Fallback to text-based clicking
-    if (!buttonClicked) {
-      console.log('🐦 Trying text-based button clicking...');
-      buttonClicked = await clickByText(page, ['Reply', 'Tweet', 'Post']);
-    }
-    
-    if (!buttonClicked) {
-      throw new Error('Could not find or click tweet button');
-    }
+    // Also try Ctrl+Enter for Windows/Linux compatibility
+    await sleep(500);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('Enter'); 
+    await page.keyboard.up('Control');
     
     await sleep(3000); // Wait for comment to be posted
     
