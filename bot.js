@@ -2251,6 +2251,39 @@ async function ensureXLoggedIn(page, { username, password }) {
   }
 }
 
+// Helper function to click back arrow and return to search results
+async function clickBackToSearch(page, searchUrl) {
+  try {
+    // Look for the back arrow button using the SVG path
+    const backButton = await page.$('svg path[d="M7.414 13l5.043 5.04-1.414 1.42L3.586 12l7.457-7.46 1.414 1.42L7.414 11H21v2H7.414z"]');
+    if (backButton) {
+      // Click the parent button/link element
+      const clickableParent = await page.evaluateHandle(el => {
+        // Find the clickable parent (button or link)
+        let parent = el.parentElement;
+        while (parent && parent.tagName !== 'BUTTON' && parent.tagName !== 'A' && !parent.getAttribute('role')) {
+          parent = parent.parentElement;
+        }
+        return parent;
+      }, backButton);
+      
+      if (clickableParent) {
+        await clickableParent.click();
+        console.log('✅ Successfully clicked back arrow');
+        return true;
+      } else {
+        throw new Error('Could not find clickable back button parent');
+      }
+    } else {
+      throw new Error('Could not find back arrow SVG');
+    }
+  } catch (backError) {
+    console.log(`⚠️ Back arrow click failed: ${backError.message}, using URL navigation as fallback`);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    return false;
+  }
+}
+
 // X Keyboard Navigation Auto-Comment System
 async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username }) {
   try {
@@ -2321,9 +2354,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         if (hasMyComment) {
           console.log(`⏭️ ${username} has already commented on this post, skipping...`);
           
-          // Step 4a: Navigate back to search results
-          console.log('🔙 Returning to search results...');
-          await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+          // Step 4a: Click back arrow to return to search results (preserving position)
+          console.log('🔙 Clicking back arrow to return to search results...');
+          await clickBackToSearch(page, searchUrl);
           await sleep(2000);
           
           results.push({ 
@@ -2396,9 +2429,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           comment: finalComment 
         });
         
-        // Return to search results for next post
-        console.log('🔙 Returning to search results...');
-        await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+        // Return to search results for next post (preserving position)
+        console.log('🔙 Clicking back arrow to return to search results...');
+        await clickBackToSearch(page, searchUrl);
         await sleep(2000);
         
         // Small delay between successful comments
@@ -2410,14 +2443,10 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
       } catch (error) {
         console.log(`❌ Error processing post ${currentPost}: ${error.message}`);
         
-        // Try to return to search results
-        try {
-          console.log('🔙 Error recovery: Returning to search results...');
-          await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-          await sleep(2000);
-        } catch (backError) {
-          console.log('⚠️ Could not return to search results, continuing...');
-        }
+        // Try to return to search results (preserving position)
+        console.log('🔙 Error recovery: Clicking back arrow to return to search results...');
+        await clickBackToSearch(page, searchUrl);
+        await sleep(2000);
         
         results.push({ 
           post: currentPost, 
