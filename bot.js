@@ -2322,9 +2322,10 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           console.log(`⏭️ ${username} has already commented on this post, skipping...`);
           
           // Step 4a: Use Cmd+Left Arrow to return to search results
-          console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+          console.log('⌨️ Pressing "Cmd+Left Arrow" simultaneously to return to search...');
           await page.keyboard.down('Meta');
-          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.down('ArrowLeft');
+          await page.keyboard.up('ArrowLeft');
           await page.keyboard.up('Meta');
           await sleep(2000);
           
@@ -2399,9 +2400,10 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         });
         
         // Return to search results for next post
-        console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+        console.log('⌨️ Pressing "Cmd+Left Arrow" simultaneously to return to search...');
         await page.keyboard.down('Meta');
-        await page.keyboard.press('ArrowLeft');
+        await page.keyboard.down('ArrowLeft');
+        await page.keyboard.up('ArrowLeft');
         await page.keyboard.up('Meta');
         await sleep(2000);
         
@@ -2416,8 +2418,10 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         // Try to return to search results
         try {
+          console.log('⌨️ Error recovery: Pressing "Cmd+Left Arrow" simultaneously to return to search...');
           await page.keyboard.down('Meta');
-          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.down('ArrowLeft');
+          await page.keyboard.up('ArrowLeft');
           await page.keyboard.up('Meta');
           await sleep(2000);
         } catch (backError) {
