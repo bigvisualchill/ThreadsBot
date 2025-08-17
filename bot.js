@@ -2269,7 +2269,7 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
       throw new Error('Either hashtag or keywords required');
     }
     
-    // Navigate to search
+    // Navigate to search and store URL for returning
     const searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
     console.log(`🐦 Navigating to search: ${searchUrl}`);
     await page.goto(searchUrl, { waitUntil: 'networkidle2' });
@@ -2321,12 +2321,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         if (hasMyComment) {
           console.log(`⏭️ ${username} has already commented on this post, skipping...`);
           
-          // Step 4a: Use Cmd+Left Arrow to return to search results
-          console.log('⌨️ Pressing "Cmd+Left Arrow" simultaneously to return to search...');
-          await page.keyboard.down('Meta');
-          await page.keyboard.down('ArrowLeft');
-          await page.keyboard.up('ArrowLeft');
-          await page.keyboard.up('Meta');
+          // Step 4a: Navigate back to search results
+          console.log('🔙 Returning to search results...');
+          await page.goto(searchUrl, { waitUntil: 'networkidle2' });
           await sleep(2000);
           
           results.push({ 
@@ -2400,11 +2397,8 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         });
         
         // Return to search results for next post
-        console.log('⌨️ Pressing "Cmd+Left Arrow" simultaneously to return to search...');
-        await page.keyboard.down('Meta');
-        await page.keyboard.down('ArrowLeft');
-        await page.keyboard.up('ArrowLeft');
-        await page.keyboard.up('Meta');
+        console.log('🔙 Returning to search results...');
+        await page.goto(searchUrl, { waitUntil: 'networkidle2' });
         await sleep(2000);
         
         // Small delay between successful comments
@@ -2418,11 +2412,8 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         // Try to return to search results
         try {
-          console.log('⌨️ Error recovery: Pressing "Cmd+Left Arrow" simultaneously to return to search...');
-          await page.keyboard.down('Meta');
-          await page.keyboard.down('ArrowLeft');
-          await page.keyboard.up('ArrowLeft');
-          await page.keyboard.up('Meta');
+          console.log('🔙 Error recovery: Returning to search results...');
+          await page.goto(searchUrl, { waitUntil: 'networkidle2' });
           await sleep(2000);
         } catch (backError) {
           console.log('⚠️ Could not return to search results, continuing...');
