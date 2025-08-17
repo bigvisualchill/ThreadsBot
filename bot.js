@@ -649,6 +649,60 @@ async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), m
 // Global variable to track scroll depth across discovery calls
 let xSearchScrollDepth = 0;
 
+// Debug function to inspect page structure
+async function debugXPageStructure(page) {
+  console.log('🔍 === DEBUGGING X PAGE STRUCTURE ===');
+  
+  const pageInfo = await page.evaluate(() => {
+    const url = window.location.href;
+    const title = document.title;
+    const articles = document.querySelectorAll('article').length;
+    const tweets = document.querySelectorAll('[data-testid="tweet"]').length;
+    const tweetTexts = document.querySelectorAll('[data-testid="tweetText"]').length;
+    const allLinks = document.querySelectorAll('a').length;
+    const statusLinks = document.querySelectorAll('a[href*="/status/"]').length;
+    
+    // Sample some article structures
+    const sampleArticles = Array.from(document.querySelectorAll('article')).slice(0, 3).map((article, i) => {
+      const links = Array.from(article.querySelectorAll('a')).map(a => a.getAttribute('href')).filter(href => href);
+      const testIds = Array.from(article.querySelectorAll('[data-testid]')).map(el => el.getAttribute('data-testid'));
+      return {
+        index: i,
+        links: links.slice(0, 5), // First 5 links
+        testIds: testIds.slice(0, 10) // First 10 test IDs
+      };
+    });
+    
+    return {
+      url,
+      title,
+      articles,
+      tweets,
+      tweetTexts,
+      allLinks,
+      statusLinks,
+      sampleArticles
+    };
+  });
+  
+  console.log('🔍 Page URL:', pageInfo.url);
+  console.log('🔍 Page Title:', pageInfo.title);
+  console.log('🔍 Articles found:', pageInfo.articles);
+  console.log('🔍 [data-testid="tweet"] elements:', pageInfo.tweets);
+  console.log('🔍 [data-testid="tweetText"] elements:', pageInfo.tweetTexts);
+  console.log('🔍 Total links:', pageInfo.allLinks);
+  console.log('🔍 Links with /status/:', pageInfo.statusLinks);
+  
+  console.log('🔍 Sample article structures:');
+  pageInfo.sampleArticles.forEach(article => {
+    console.log(`  Article ${article.index}:`);
+    console.log(`    Links: ${JSON.stringify(article.links)}`);
+    console.log(`    Test IDs: ${JSON.stringify(article.testIds)}`);
+  });
+  
+  console.log('🔍 === END DEBUG ===');
+}
+
 // Simple discovery function for basic operations (discover, like)
 async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
   try {
@@ -674,6 +728,9 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
     // Wait for search results to load
     await sleep(3000);
     
+    // Debug page structure (uncomment for troubleshooting)
+    // await debugXPageStructure(page);
+    
     // Simple scroll - 3 scrolls
   for (let i = 0; i < 3; i++) {
       await page.evaluate(() => {
@@ -682,13 +739,39 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
       await sleep(2000);
   }
   
-  // Extract tweet URLs
+      // Extract tweet URLs with debugging
     const tweets = await page.evaluate((maxPosts) => {
-      const links = Array.from(document.querySelectorAll('a[href*="/status/"]'));
+      console.log('🔍 DEBUG: Simple tweet extraction starting...');
+      
+      // Try multiple selectors
+      const selectors = [
+        'a[href*="/status/"]',
+        'article a[href*="/status/"]',
+        '[data-testid="Tweet"] a[href*="/status/"]',
+        'a[role="link"][href*="status"]'
+      ];
+      
+      let allTweetLinks = [];
+      selectors.forEach(selector => {
+        const links = Array.from(document.querySelectorAll(selector));
+        console.log(`🔍 Simple selector "${selector}": Found ${links.length} links`);
+        allTweetLinks.push(...links);
+      });
+      
+      // Also check all links for tweet patterns
+      const allLinks = Array.from(document.querySelectorAll('a'));
+      const tweetPatternLinks = allLinks.filter(link => {
+        const href = link.getAttribute('href') || '';
+        return href.includes('/status/');
+      });
+      
+      console.log(`🔍 Total links on page: ${allLinks.length}`);
+      console.log(`🔍 Links with /status/: ${tweetPatternLinks.length}`);
+      
       const uniqueUrls = new Set();
       const tweetUrls = [];
       
-      links.forEach(link => {
+      tweetPatternLinks.forEach(link => {
         const href = link.getAttribute('href');
         if (href && href.includes('/status/')) {
           const statusMatch = href.match(/\/status\/(\d+)/);
@@ -705,6 +788,7 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
         }
       });
       
+      console.log(`🔍 Simple extraction result: ${tweetUrls.length} unique tweets`);
       return tweetUrls.slice(0, maxPosts);
   }, maxPosts);
   
@@ -743,6 +827,9 @@ async function discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
     // Wait for search results to load
     await sleep(3000);
     
+    // Debug page structure (uncomment for troubleshooting)
+    // await debugXPageStructure(page);
+    
     // Check if we're still logged in
     const stillLoggedIn = await page.evaluate(() => {
       return !!document.querySelector('[data-testid="AppTabBar_Home_Link"]');
@@ -766,15 +853,60 @@ async function discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
       await sleep(2000);
       scrollCount++;
       
-      // Extract current tweets
+      // Extract current tweets with enhanced debugging
       const currentTweets = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a[href*="/status/"]'));
+        console.log('🔍 DEBUG: Starting tweet extraction...');
+        
+        // Try multiple selectors for tweet links
+        const selectors = [
+          'a[href*="/status/"]',
+          'a[href*="/x.com/"]', 
+          'a[href*="twitter.com"]',
+          '[data-testid="Tweet"] a',
+          'article a',
+          'div[data-testid="tweetText"] a',
+          'a[role="link"][href*="status"]'
+        ];
+        
+        let allLinks = [];
+        selectors.forEach(selector => {
+          const links = Array.from(document.querySelectorAll(selector));
+          console.log(`🔍 Selector "${selector}": Found ${links.length} links`);
+          allLinks.push(...links);
+        });
+        
+        // Also check for any links that might contain tweet URLs
+        const allPageLinks = Array.from(document.querySelectorAll('a'));
+        console.log(`🔍 Total links on page: ${allPageLinks.length}`);
+        
+        // Sample some links to see what we're working with
+        const sampleLinks = allPageLinks.slice(0, 10).map(link => ({
+          href: link.getAttribute('href'),
+          text: link.textContent?.slice(0, 50) || '',
+          testid: link.getAttribute('data-testid') || 'none'
+        }));
+        console.log('🔍 Sample links:', sampleLinks);
+        
+        // Look for tweet-like patterns
+        const tweetLinks = allPageLinks.filter(link => {
+          const href = link.getAttribute('href') || '';
+          return href.includes('/status/') || 
+                 href.includes('/tweet/') ||
+                 href.match(/\/\w+\/status\/\d+/) ||
+                 href.match(/twitter\.com\/\w+\/status\/\d+/) ||
+                 href.match(/x\.com\/\w+\/status\/\d+/);
+        });
+        
+        console.log(`🔍 Found ${tweetLinks.length} potential tweet links`);
+        
         const uniqueUrls = new Set();
         const tweetUrls = [];
         
-        links.forEach(link => {
-          const href = link.getAttribute('href');
-          if (href && href.includes('/status/')) {
+        tweetLinks.forEach((link, index) => {
+          const href = link.getAttribute('href') || '';
+          console.log(`🔍 Processing link ${index + 1}: ${href}`);
+          
+          if (href.includes('/status/')) {
             const statusMatch = href.match(/\/status\/(\d+)/);
             if (statusMatch) {
               const tweetId = statusMatch[1];
@@ -784,11 +916,15 @@ async function discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
               if (!uniqueUrls.has(tweetId)) {
                 uniqueUrls.add(tweetId);
                 tweetUrls.push(cleanUrl);
+                console.log(`✅ Added tweet: ${cleanUrl}`);
+              } else {
+                console.log(`⏭️ Duplicate tweet ID: ${tweetId}`);
               }
             }
           }
         });
         
+        console.log(`🔍 Final result: ${tweetUrls.length} unique tweet URLs`);
         return tweetUrls;
       });
       

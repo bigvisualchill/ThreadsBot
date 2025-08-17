@@ -346,21 +346,30 @@ export async function xHasMyComment(page, tweetUrl, knownUsername = null) {
   try {
     console.log(`🐦 Checking if should skip tweet: ${tweetUrl}`);
     
-    // 1. Check cache first
-    if (hasCommentedInCache(tweetUrl)) {
-      console.log('🐦 Tweet found in comment cache, skipping');
-      return { skip: true, reason: 'in-cache' };
+    // Check cache status
+    const inCache = hasCommentedInCache(tweetUrl);
+    if (inCache) {
+      console.log('🐦 Tweet found in comment cache - verifying with DOM analysis...');
+    } else {
+      console.log('🐦 Cache miss - performing DOM analysis for existing comments...');
     }
     
-    // 2. Check DOM for existing comments (more thorough)
-    console.log('🐦 Cache miss - performing DOM analysis for existing comments...');
+    // Always perform DOM analysis for reliable duplicate detection
     const commentCheck = await hasMyCommentOnTweet(page, tweetUrl, knownUsername);
     console.log(`🐦 DOM analysis result:`, commentCheck);
     
     if (commentCheck.hasComment) {
-      console.log(`🐦 Found existing comment via DOM analysis, adding to cache and skipping`);
-      addToCommentedCache(tweetUrl, commentCheck.reason);
+      console.log(`🐦 ✅ Confirmed existing comment via DOM analysis`);
+      // Ensure it's in cache for future reference
+      if (!inCache) {
+        console.log(`🐦 Adding confirmed comment to cache`);
+        addToCommentedCache(tweetUrl, commentCheck.reason);
+      }
       return { skip: true, reason: commentCheck.reason };
+    } else if (inCache) {
+      console.log(`🐦 ⚠️ Cache says commented but DOM shows no comment - cache may be corrupted`);
+      console.log(`🐦 🔄 Proceeding with comment attempt (trusting DOM over cache)`);
+      // Don't skip - let it attempt to comment
     }
     
     console.log('✅ Tweet is safe to comment on (no existing comments found)');
