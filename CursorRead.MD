@@ -423,3 +423,54 @@ Puppeteer Social/
 - ✅ **Future-Proof**: Keyboard shortcuts remain stable despite UI changes
 
 **Current State**: X (Twitter) comment posting is now highly reliable with complete text preservation and universal keyboard-based submission.
+
+### X Comment Cache Logic Resolution Phase
+
+**Date**: January 2025  
+**Focus**: Critical fix for X comment cache corruption preventing repeated auto-comment runs
+
+**Problem Identified**:
+- Bot was adding tweets to cache before verifying successful comment posting
+- Failed comments were incorrectly marked as "commented" in cache
+- Subsequent runs would skip all tweets thinking they were already processed
+- Cache pollution prevented fresh commenting attempts on repeated runs
+
+**Root Cause**:
+```javascript
+// PROBLEMATIC CODE:
+await xCommentCurrentPage(page, finalComment);
+addToXCommentedCache(tweetUrl, 'commented'); // Always executed regardless of success!
+```
+
+**Solution Implemented**:
+- **Enhanced Success Validation**: Only cache tweets after confirming actual comment posting success
+- **Proper Error Handling**: Validate `commentResult.success` before cache addition
+- **Cache Management**: Added `clearXCommentCache()` function for programmatic cache clearing
+- **Manual Cache Reset**: Cleared corrupted cache entries to restore functionality
+
+**Technical Implementation**:
+```javascript
+// FIXED CODE:
+const commentResult = await xCommentCurrentPage(page, finalComment);
+if (commentResult && commentResult.success) {
+  addToXCommentedCache(tweetUrl, 'commented');
+  console.log(`✅ Comment verified successful, added to cache`);
+} else {
+  throw new Error('Comment did not complete successfully');
+}
+```
+
+**Key Improvements**:
+- ✅ **Accurate Cache Management**: Only successful comments are cached
+- ✅ **Reliable Repeated Runs**: Bot can now run multiple times without false cache hits
+- ✅ **Better Error Handling**: Failed attempts don't pollute the cache
+- ✅ **Cache Clearing Capability**: `clearXCommentCache()` function for manual cache management
+- ✅ **Fresh Discovery**: Reset cache allows bot to rediscover previously "blocked" tweets
+
+**User Impact**:
+- **Resolved Issue**: Repeated auto-comment runs now work correctly
+- **No More False Skips**: Tweets are only skipped if actually commented on
+- **Improved Reliability**: Cache accurately reflects real comment history
+- **Better Debugging**: Clear cache management for troubleshooting
+
+**Current State**: X (Twitter) auto-comment now maintains accurate cache state and supports reliable repeated execution without false positive skips.
