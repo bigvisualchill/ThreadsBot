@@ -646,11 +646,13 @@ async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), m
   return Array.from(collected);
 }
 
+// Global variable to track scroll depth across discovery calls
+let xSearchScrollDepth = 0;
+
+// Simple discovery function for basic operations (discover, like)
 async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
   try {
-    console.log(`🐦 Starting X post discovery with criteria:`, searchCriteria);
-    console.log(`🐦 Max posts requested: ${maxPosts}`);
-    console.log(`🐦 Currently discovered posts: ${discoveredPosts.size}`);
+    console.log(`🐦 Discovering X posts with criteria: ${JSON.stringify(searchCriteria)}`);
     
   const { hashtag, keywords } = searchCriteria;
     let searchUrl;
@@ -666,60 +668,33 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
       throw new Error('No search criteria provided (hashtag or keywords required)');
     }
     
-    console.log(`🐦 Navigating to search URL: ${searchUrl}`);
+    console.log(`🐦 Navigating to X search: ${searchUrl}`);
     await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     
     // Wait for search results to load
-    await sleep(2000);
+    await sleep(3000);
     
-    // Check if we're still logged in
-    const stillLoggedIn = await page.evaluate(() => {
-      return !!document.querySelector('[data-testid="AppTabBar_Home_Link"]');
-    });
-    
-    if (!stillLoggedIn) {
-      throw new Error('Lost X session during search - please re-login');
-    }
-    
-    // Enhanced scrolling to load more tweets
-    console.log(`🐦 Scrolling to load more tweets...`);
-    for (let i = 0; i < 5; i++) {
-      const beforeScroll = await page.evaluate(() => document.querySelectorAll('a[href*="/status/"]').length);
-      
+    // Simple scroll - 3 scrolls
+  for (let i = 0; i < 3; i++) {
       await page.evaluate(() => {
         window.scrollBy(0, window.innerHeight * 2);
       });
-      await sleep(1500); // Longer wait for content to load
-      
-      const afterScroll = await page.evaluate(() => document.querySelectorAll('a[href*="/status/"]').length);
-      console.log(`🐦 Scroll ${i + 1}: Found ${afterScroll} tweet links (was ${beforeScroll})`);
-      
-      // If no new content loaded, break early
-      if (afterScroll === beforeScroll && i > 1) {
-        console.log(`🐦 No new content after scroll ${i + 1}, stopping`);
-        break;
-      }
-    }
-    
-    // Extract tweet URLs with enhanced filtering
-    console.log(`🐦 Extracting tweet URLs...`);
+      await sleep(2000);
+  }
+  
+  // Extract tweet URLs
     const tweets = await page.evaluate((maxPosts) => {
       const links = Array.from(document.querySelectorAll('a[href*="/status/"]'));
-      console.log(`Found ${links.length} potential tweet links`);
-      
       const uniqueUrls = new Set();
       const tweetUrls = [];
       
       links.forEach(link => {
         const href = link.getAttribute('href');
         if (href && href.includes('/status/')) {
-          // Extract the tweet ID to ensure uniqueness
           const statusMatch = href.match(/\/status\/(\d+)/);
           if (statusMatch) {
             const tweetId = statusMatch[1];
             const fullUrl = href.startsWith('http') ? href : `https://x.com${href}`;
-            
-            // Remove query parameters for cleaner URLs
             const cleanUrl = fullUrl.split('?')[0];
             
             if (!uniqueUrls.has(tweetId)) {
@@ -730,29 +705,113 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
         }
       });
       
-      console.log(`Extracted ${tweetUrls.length} unique tweet URLs`);
       return tweetUrls.slice(0, maxPosts);
   }, maxPosts);
   
-    console.log(`🐦 Raw tweets found: ${tweets.length}`);
-    console.log(`🐦 Sample tweets:`, tweets.slice(0, 3));
+    console.log(`🐦 Found ${tweets.length} X posts`);
+  return tweets;
     
-    // Filter out already discovered posts
-    const newTweets = tweets.filter(tweetUrl => !discoveredPosts.has(tweetUrl));
-    
-    console.log(`🐦 After filtering, new tweets: ${newTweets.length}`);
-    console.log(`🐦 Sample new tweets:`, newTweets.slice(0, 3));
-    
-    // Add new tweets to discovered set
-    newTweets.forEach(tweetUrl => discoveredPosts.add(tweetUrl));
-    
-    console.log(`🐦 Found ${tweets.length} total tweets, ${newTweets.length} new tweets (${tweets.length - newTweets.length} already discovered)`);
-    console.log(`🐦 Total discovered posts now: ${discoveredPosts.size}`);
-    
-    return newTweets;
   } catch (error) {
     console.error(`❌ X post discovery error: ${error.message}`);
     throw new Error(`X post discovery failed: ${error.message}`);
+  }
+}
+
+// Bulk discovery function for auto-comment (collects many tweets at once)
+async function discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
+  try {
+    console.log(`🐦 Collecting X posts in bulk with criteria: ${JSON.stringify(searchCriteria)}`);
+    console.log(`🐦 Target: ${targetCount} posts to collect`);
+    
+  const { hashtag, keywords } = searchCriteria;
+    let searchUrl;
+  
+  if (hashtag) {
+    const searchTerm = hashtag.startsWith('#') ? hashtag : `#${hashtag}`;
+      searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
+      console.log(`🐦 Searching by hashtag: ${searchTerm}`);
+  } else if (keywords) {
+      searchUrl = `https://x.com/search?q=${encodeURIComponent(keywords)}&src=typed_query&f=live`;
+      console.log(`🐦 Searching by keywords: ${keywords}`);
+    } else {
+      throw new Error('No search criteria provided (hashtag or keywords required)');
+    }
+    
+    console.log(`🐦 Navigating to X search: ${searchUrl}`);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Wait for search results to load
+    await sleep(3000);
+    
+    // Check if we're still logged in
+    const stillLoggedIn = await page.evaluate(() => {
+      return !!document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+    });
+    
+    if (!stillLoggedIn) {
+      throw new Error('Lost X session during search - please re-login');
+    }
+    
+    // Scroll to collect many posts at once
+    console.log(`🐦 Scrolling to collect ${targetCount} posts...`);
+    let allTweets = [];
+    let scrollCount = 0;
+    const maxScrolls = 15;
+    
+    while (allTweets.length < targetCount && scrollCount < maxScrolls) {
+      // Scroll down
+      await page.evaluate(() => {
+        window.scrollBy(0, window.innerHeight * 2);
+      });
+      await sleep(2000);
+      scrollCount++;
+      
+      // Extract current tweets
+      const currentTweets = await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a[href*="/status/"]'));
+        const uniqueUrls = new Set();
+        const tweetUrls = [];
+        
+        links.forEach(link => {
+          const href = link.getAttribute('href');
+          if (href && href.includes('/status/')) {
+            const statusMatch = href.match(/\/status\/(\d+)/);
+            if (statusMatch) {
+              const tweetId = statusMatch[1];
+              const fullUrl = href.startsWith('http') ? href : `https://x.com${href}`;
+              const cleanUrl = fullUrl.split('?')[0];
+              
+              if (!uniqueUrls.has(tweetId)) {
+                uniqueUrls.add(tweetId);
+                tweetUrls.push(cleanUrl);
+              }
+            }
+          }
+        });
+        
+        return tweetUrls;
+      });
+      
+      // Update our collection with new unique tweets
+      const newTweets = currentTweets.filter(tweet => !allTweets.includes(tweet));
+      allTweets.push(...newTweets);
+      allTweets = [...new Set(allTweets)]; // Remove duplicates
+      
+      console.log(`🐦 Scroll ${scrollCount}: Collected ${allTweets.length} unique tweets (${newTweets.length} new this scroll)`);
+      
+      // Stop if we're not finding new content
+      if (newTweets.length === 0 && scrollCount > 5) {
+        console.log(`🐦 No new tweets found, stopping collection`);
+        break;
+      }
+    }
+    
+    console.log(`🐦 ✅ Collection complete: ${allTweets.length} total unique tweets collected`);
+    return allTweets;
+    
+  } catch (error) {
+    console.error(`❌ X post bulk discovery error: ${error.message}`);
+    throw new Error(`X post bulk discovery failed: ${error.message}`);
   }
 }
 
@@ -3690,123 +3749,133 @@ export async function runAction(options) {
       if (action === 'auto-comment') {
         console.log(`🐦 Starting X auto-comment with criteria: ${JSON.stringify(searchCriteria)}`);
         
+        // Reset scroll depth for new auto-comment session
+        xSearchScrollDepth = 0;
+        
         const results = [];
         const targetSuccesses = Math.max(1, Number(maxPosts) || 1);
         let successes = 0;
         let attempts = 0;
-        const maxAttempts = targetSuccesses * 3; // Search up to 3x target to account for skips
         
-        console.log(`🐦 Target: ${targetSuccesses} successful comments, max attempts: ${maxAttempts}`);
+        console.log(`🐦 Target: ${targetSuccesses} successful comments (no attempt limit - will continue until target is reached)`);
         
         // Get X cache stats
         const cacheStats = getXCacheStats();
         console.log(`📊 X Comment Cache: ${cacheStats.total} previously commented tweets`);
         
-        while (successes < targetSuccesses && attempts < maxAttempts) {
-          console.log(`\n🐦 === Batch ${Math.floor(attempts / 10) + 1} ===`);
-          
-          // Get a batch of tweets to check
-          const batchSize = Math.min(10, maxAttempts - attempts);
-          const tweets = await discoverXPosts(page, searchCriteria, batchSize);
-          
-          if (tweets.length === 0) {
-            console.log(`⚠️ No more tweets found in search results`);
+        // Step 1: Collect a large batch of tweets upfront
+        console.log(`\n🐦 === PHASE 1: COLLECTING TWEETS ===`);
+        const allTweets = await discoverXPostsBulk(page, searchCriteria, targetSuccesses * 10); // Collect 10x target to account for skips
+        
+        if (allTweets.length === 0) {
+          console.log(`⚠️ No tweets found in search results`);
+          return { ok: true, message: 'No tweets found to comment on', results: [] };
+        }
+        
+        console.log(`\n🐦 === PHASE 2: PROCESSING TWEETS ===`);
+        console.log(`🐦 Processing ${allTweets.length} collected tweets sequentially...`);
+        
+        // Step 2: Process tweets one by one until we reach target
+        for (const tweetUrl of allTweets) {
+          if (successes >= targetSuccesses) {
+            console.log(`🎯 Target reached! Stopping processing.`);
             break;
           }
+          attempts++;
+          console.log(`\n🐦 [${attempts}/${allTweets.length}] Processing: ${tweetUrl} (${successes}/${targetSuccesses} completed)`);
           
-          console.log(`🐦 Processing batch of ${tweets.length} tweets...`);
-          
-          for (const tweetUrl of tweets) {
-            attempts++;
-            console.log(`\n🐦 [${attempts}/${maxAttempts}] Processing: ${tweetUrl}`);
-            
-            try {
-              // Check if we should skip this tweet (duplicate detection)
-              const skipCheck = await xHasMyComment(page, tweetUrl);
-              if (skipCheck.skip) {
-                console.log(`⏭️ Skipping tweet (${skipCheck.reason}): ${tweetUrl}`);
-                results.push({ 
-                  url: tweetUrl, 
-                  success: false, 
-                  skipped: true, 
-                  reason: skipCheck.reason 
-                });
-                continue; // Skip to next tweet without counting as success
-              }
-              
-              // Extract post content for AI
-              console.log(`🐦 Extracting content for AI...`);
-              const postContent = await getPostContent(page, tweetUrl, platform);
-              console.log(`📝 Post content: "${postContent.slice(0, 100)}${postContent.length > 100 ? '...' : ''}"`);
-              
-              // Generate comment (AI or manual)
-            const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
-              const finalComment = useAI ? 
-                await generateAIComment(postContent, sessionAssistantId) : 
-                comment;
-              
-              console.log(`💬 Generated comment: "${finalComment.slice(0, 100)}${finalComment.length > 100 ? '...' : ''}"`);
-              
-              // Navigate to the tweet page once
-              console.log(`🐦 Navigating to tweet: ${tweetUrl}`);
-              await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
-              await sleep(2000); // Allow page to settle
-              
-              // Perform like FIRST if requested (more natural workflow)
-              if (likePost) {
-                console.log(`❤️ Attempting to like tweet first...`);
-                try {
-                  await xLikeCurrentPage(page);
-                  console.log(`✅ Tweet liked successfully`);
-                } catch (likeError) {
-                  console.log(`⚠️ Like failed (continuing with comment): ${likeError.message}`);
-                }
-              }
-              
-              // Then comment on the post (already on the right page)
-              console.log(`💬 Posting comment...`);
-              const commentResult = await xCommentCurrentPage(page, finalComment);
-              
-              // Only add to cache if comment was actually successful
-              if (commentResult && commentResult.success) {
-                addToXCommentedCache(tweetUrl, 'commented');
-                console.log(`✅ Comment verified successful, added to cache`);
-              } else {
-                throw new Error('Comment did not complete successfully');
-              }
-              
-              successes++;
-              console.log(`✅ Comment posted successfully! (${successes}/${targetSuccesses} completed)`);
-              
+          try {
+            // Check if we should skip this tweet (duplicate detection)
+            const skipCheck = await xHasMyComment(page, tweetUrl, username);
+            if (skipCheck.skip) {
+              console.log(`⏭️ Skipping tweet (${skipCheck.reason}): ${tweetUrl}`);
               results.push({ 
                 url: tweetUrl, 
-                success: true, 
-                comment: finalComment,
-                liked: likePost 
+                success: false, 
+                skipped: true, 
+                reason: skipCheck.reason 
               });
-              
-              // Break if we've reached our target
-              if (successes >= targetSuccesses) {
-                console.log(`🎯 Reached target of ${targetSuccesses} successful comments!`);
-                break;
-              }
-              
-              // Delay between successful comments
-              console.log(`⏳ Waiting 2 seconds before next comment...`);
-              await sleep(2000);
-              
-          } catch (error) {
-              console.log(`❌ Error on ${tweetUrl}: ${error.message}`);
-              results.push({ url: tweetUrl, success: false, error: error.message });
-              // Continue to next tweet without long delay
-              await sleep(500);
+              continue; // Skip to next tweet without counting as success
             }
+            
+            // Extract post content for AI
+            console.log(`🐦 Extracting content for AI...`);
+            const postContent = await getPostContent(page, tweetUrl, platform);
+            console.log(`📝 Post content: "${postContent.slice(0, 100)}${postContent.length > 100 ? '...' : ''}"`);
+            
+            // Generate comment (AI or manual)
+            const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+            const finalComment = useAI ? 
+              await generateAIComment(postContent, sessionAssistantId) : 
+              comment;
+            
+            console.log(`💬 Generated comment: "${finalComment.slice(0, 100)}${finalComment.length > 100 ? '...' : ''}"`);
+            
+            // Navigate to the tweet page once
+            console.log(`🐦 Navigating to tweet: ${tweetUrl}`);
+            await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+            await sleep(2000); // Allow page to settle
+            
+            // Perform like FIRST if requested (more natural workflow)
+            if (likePost) {
+              console.log(`❤️ Attempting to like tweet first...`);
+              try {
+                await xLikeCurrentPage(page);
+                console.log(`✅ Tweet liked successfully`);
+              } catch (likeError) {
+                console.log(`⚠️ Like failed (continuing with comment): ${likeError.message}`);
+              }
+            }
+            
+            // Then comment on the post (already on the right page)
+            console.log(`💬 Posting comment...`);
+            const commentResult = await xCommentCurrentPage(page, finalComment);
+            
+            // Only add to cache if comment was actually successful
+            if (commentResult && commentResult.success) {
+              addToXCommentedCache(tweetUrl, 'commented');
+              console.log(`✅ Comment verified successful, added to cache`);
+            } else {
+              throw new Error('Comment did not complete successfully');
+            }
+            
+            successes++;
+            console.log(`✅ Comment posted successfully! (${successes}/${targetSuccesses} completed)`);
+            
+            results.push({ 
+              url: tweetUrl, 
+              success: true, 
+              comment: finalComment,
+              liked: likePost 
+            });
+            
+            // Break if we've reached our target
+            if (successes >= targetSuccesses) {
+              console.log(`🎯 Reached target of ${targetSuccesses} successful comments!`);
+              break;
+            }
+            
+            // Delay between successful comments
+            if (successes < targetSuccesses) {
+              console.log(`⏳ Waiting 3 seconds before next comment...`);
+              await sleep(3000);
+            }
+            
+          } catch (error) {
+            console.log(`❌ Error processing tweet ${tweetUrl}: ${error.message}`);
+            results.push({ url: tweetUrl, success: false, error: error.message });
+            
+            // Small delay before next attempt
+            await sleep(1000);
           }
         }
 
         console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
-        if (successes < targetSuccesses) {
-          console.log(`⚠️  Did not reach target of ${targetSuccesses} comments. Reached limit of ${maxAttempts} attempts.`);
+        console.log(`📊 Loop termination reason:`);
+        if (successes >= targetSuccesses) {
+          console.log(`✅ SUCCESS: Reached target of ${targetSuccesses} comments`);
+        } else {
+          console.log(`⚠️  NO MORE TWEETS: Exhausted search results without achieving ${targetSuccesses} successes`);
         }
 
         return {
