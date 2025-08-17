@@ -98,7 +98,7 @@ function getSessionFilePath(platform, sessionName) {
 
 
 
-async function saveSession(page, platform, sessionName = 'default') {
+async function saveSession(page, platform, sessionName = 'default', metadata = {}) {
   const { sessionsDir, sessionPath } = getSessionFilePath(platform, sessionName);
   await fs.mkdir(sessionsDir, { recursive: true });
   const cookies = await page.cookies();
@@ -115,7 +115,32 @@ async function saveSession(page, platform, sessionName = 'default') {
     }
     return { localStorage: ls, sessionStorage: ss };
   });
-  await fs.writeFile(sessionPath, JSON.stringify({ cookies, storage }, null, 2), 'utf8');
+  
+  // Include metadata (like assistantId) in session file
+  const sessionData = { 
+    cookies, 
+    storage, 
+    metadata: {
+      ...metadata,
+      savedAt: new Date().toISOString(),
+      platform
+    }
+  };
+  
+  await fs.writeFile(sessionPath, JSON.stringify(sessionData, null, 2), 'utf8');
+  console.log(`Session saved with metadata:`, metadata);
+}
+
+// Helper function to get Assistant ID from session
+async function getSessionAssistantId(platform, sessionName) {
+  try {
+    const { sessionPath } = getSessionFilePath(platform, sessionName);
+    const data = JSON.parse(await fs.readFile(sessionPath, 'utf8'));
+    return data.metadata?.assistantId || null;
+  } catch (error) {
+    console.log(`Could not load assistant ID from session: ${error.message}`);
+    return null;
+  }
 }
 
 async function loadSession(page, platform, sessionName = 'default') {
@@ -124,6 +149,11 @@ async function loadSession(page, platform, sessionName = 'default') {
   try {
     const data = JSON.parse(await fs.readFile(sessionPath, 'utf8'));
     console.log(`Session data loaded - cookies: ${data.cookies?.length || 0}, localStorage: ${Object.keys(data.storage?.localStorage || {}).length}, sessionStorage: ${Object.keys(data.storage?.sessionStorage || {}).length}`);
+    
+    // Log assistant ID if available
+    if (data.metadata?.assistantId) {
+      console.log(`🤖 Session Assistant ID: ${data.metadata.assistantId}`);
+    }
     
     let cookiesLoaded = false;
     if (Array.isArray(data.cookies) && data.cookies.length > 0) {
@@ -393,7 +423,7 @@ async function clickByText(page, texts) {
 }
 
 // AI Comment Generation (simplified with createAndPoll)
-async function generateAIComment(postContent) {
+async function generateAIComment(postContent, sessionAssistantId = null) {
   console.log('🤖 AI: Starting AI comment generation with Assistants API...');
   console.log(`🤖 AI: Post content length: ${postContent?.length || 0}`);
 
@@ -402,8 +432,9 @@ async function generateAIComment(postContent) {
   }
 
   try {
-    const assistantId = 'asst_2aVBUHe0mfXS4JZmU5YYf5E4';
-    console.log(`🤖 AI: Using assistant ID: ${assistantId}`);
+    // Use session-specific assistant ID if provided, otherwise fall back to default
+    const assistantId = sessionAssistantId || 'asst_2aVBUHe0mfXS4JZmU5YYf5E4';
+    console.log(`🤖 AI: Using assistant ID: ${assistantId}${sessionAssistantId ? ' (from session)' : ' (default)'}`);
 
     // 1) Create a thread
     const thread = await openai.beta.threads.create();
@@ -2393,6 +2424,7 @@ export async function runAction(options) {
     maxPosts = 5,
     useAI = false,
     likePost = false,
+    assistantId,
   } = options;
 
   console.log(`runAction called with action: ${action}, platform: ${platform}, sessionName: ${sessionName}`);
@@ -2487,12 +2519,31 @@ export async function runAction(options) {
     if (platform === 'instagram') {
       if (action === 'login') {
         try {
+          // Validate Assistant ID before proceeding with login
+          if (!assistantId || !assistantId.startsWith('asst_')) {
+            return { ok: false, message: 'Valid OpenAI Assistant ID is required (must start with asst_)' };
+          }
+          
+          // Validate Assistant ID with OpenAI API
+          if (!openai) {
+            return { ok: false, message: 'OPENAI_API_KEY environment variable is required for AI validation' };
+          }
+          
+          try {
+            console.log(`🤖 Validating Assistant ID: ${assistantId}`);
+            await openai.beta.assistants.retrieve(assistantId);
+            console.log(`✅ Assistant ID validated successfully`);
+          } catch (assistantError) {
+            console.log(`❌ Assistant ID validation failed: ${assistantError.message}`);
+            return { ok: false, message: `Invalid Assistant ID: ${assistantError.message}` };
+          }
+          
           console.log('Starting Instagram login process...');
           await ensureInstagramLoggedIn(page, { username, password });
           console.log('Instagram login successful, saving session...');
-          await saveSession(page, platform, sessionName);
+          await saveSession(page, platform, sessionName, { assistantId });
           console.log('Session saved successfully');
-          return { ok: true, message: 'Instagram login successful and session saved.' };
+          return { ok: true, message: 'Instagram login successful and session saved with Assistant ID.' };
         } catch (error) {
           console.error('Instagram login error details:', {
             message: error.message,
@@ -2589,7 +2640,8 @@ export async function runAction(options) {
             let aiComment;
             if (useAI) {
               console.log(`🤖 Generating AI comment...`);
-              aiComment = await generateAIComment(postContent);
+              const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+              aiComment = await generateAIComment(postContent, sessionAssistantId);
               console.log(`🤖 AI comment: "${aiComment}"`);
             } else {
               aiComment = comment;
@@ -2759,7 +2811,8 @@ export async function runAction(options) {
               let finalComment;
               if (useAI) {
                 console.log(`🤖 Generating AI comment...`);
-                finalComment = await generateAIComment(postContent);
+                const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+                finalComment = await generateAIComment(postContent, sessionAssistantId);
                 console.log(`🤖 AI comment: "${finalComment}"`);
               } else {
                 finalComment = comment;
@@ -2826,7 +2879,8 @@ export async function runAction(options) {
           
           const postContent = await getPostContent(page, url, platform);
           console.log(`Extracted post content: "${postContent.substring(0, 100)}..."`);
-          const finalComment = useAI ? await generateAIComment(postContent) : comment;
+          const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+          const finalComment = useAI ? await generateAIComment(postContent, sessionAssistantId) : comment;
           console.log(`Generated comment: "${finalComment}"`);
           const commentResult = await instagramComment(page, url, finalComment, username);
           
@@ -2913,7 +2967,8 @@ export async function runAction(options) {
         for (const postUrl of posts) {
           try {
             const postContent = await getPostContent(page, postUrl, platform);
-            const aiComment = useAI ? await generateAIComment(postContent) : comment;
+            const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+            const aiComment = useAI ? await generateAIComment(postContent, sessionAssistantId) : comment;
             await xComment(page, postUrl, aiComment);
             results.push({ url: postUrl, success: true, comment: aiComment });
             await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
@@ -2948,7 +3003,8 @@ export async function runAction(options) {
         }
       }
       if (action === 'comment') {
-        const finalComment = useAI ? await generateAIComment('') : comment;
+        const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+        const finalComment = useAI ? await generateAIComment('', sessionAssistantId) : comment;
         await xComment(page, url, finalComment);
       }
       if (action === 'follow') {
@@ -2961,9 +3017,28 @@ export async function runAction(options) {
     if (platform === 'threads') {
       if (action === 'login') {
         try {
+          // Validate Assistant ID before proceeding with login
+          if (!assistantId || !assistantId.startsWith('asst_')) {
+            return { ok: false, message: 'Valid OpenAI Assistant ID is required (must start with asst_)' };
+          }
+          
+          // Validate Assistant ID with OpenAI API
+          if (!openai) {
+            return { ok: false, message: 'OPENAI_API_KEY environment variable is required for AI validation' };
+          }
+          
+          try {
+            console.log(`🤖 Validating Assistant ID: ${assistantId}`);
+            await openai.beta.assistants.retrieve(assistantId);
+            console.log(`✅ Assistant ID validated successfully`);
+          } catch (assistantError) {
+            console.log(`❌ Assistant ID validation failed: ${assistantError.message}`);
+            return { ok: false, message: `Invalid Assistant ID: ${assistantError.message}` };
+          }
+          
           await ensureThreadsLoggedIn(page, { username, password });
-          await saveSession(page, platform, sessionName);
-          return { ok: true, message: 'Threads login successful and session saved.' };
+          await saveSession(page, platform, sessionName, { assistantId });
+          return { ok: true, message: 'Threads login successful and session saved with Assistant ID.' };
         } catch (error) {
           return { ok: false, message: `Threads login failed: ${error.message}` };
         }
@@ -3024,12 +3099,13 @@ export async function runAction(options) {
               
               let aiComment;
               if (useAI) {
-                console.log(`🤖 Generating AI comment for extracted content...`);
-                console.log(`📄 Post content preview: "${postContent.slice(0, 100)}..."`);
-                const startTime = Date.now();
-                aiComment = await generateAIComment(postContent);
-                const duration = Date.now() - startTime;
-                console.log(`🤖 AI comment generated in ${duration}ms: "${aiComment}"`);
+                              console.log(`🤖 Generating AI comment for extracted content...`);
+              console.log(`📄 Post content preview: "${postContent.slice(0, 100)}..."`);
+              const startTime = Date.now();
+              const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+              aiComment = await generateAIComment(postContent, sessionAssistantId);
+              const duration = Date.now() - startTime;
+              console.log(`🤖 AI comment generated in ${duration}ms: "${aiComment}"`);
               } else {
                 aiComment = comment;
                 console.log(`💬 Using manual comment: "${aiComment}"`);
@@ -3122,7 +3198,8 @@ export async function runAction(options) {
         }
       }
       if (action === 'comment') {
-        const finalComment = useAI ? await generateAIComment('') : comment;
+        const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+        const finalComment = useAI ? await generateAIComment('', sessionAssistantId) : comment;
         await threadsComment(page, url, finalComment);
       }
     }

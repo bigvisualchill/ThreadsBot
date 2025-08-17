@@ -526,6 +526,12 @@
         </div>
 
         <div class="form-group">
+          <label for="assistantId">OpenAI Assistant ID:</label>
+          <input type="text" id="assistantId" name="assistantId" placeholder="asst_xxxxxxxxxxxxxxxxxxxxxxxx" required>
+          <small style="color: #888; font-size: 12px; display: block; margin-top: 4px;">Each account can use a different AI assistant for unique commenting styles</small>
+        </div>
+
+        <div class="form-group">
           <button type="button" id="loginBtn" class="btn btn-primary">Login & Save Session</button>
           <input type="checkbox" id="headful" name="headful">
           <label for="headful">Headful Mode (Run in browser)</label>
@@ -545,6 +551,7 @@
           <div class="session-actions">
             <button type="button" id="checkSessionBtn" class="btn btn-secondary">Check Status</button>
             <button type="button" id="logoutBtn" class="btn btn-danger">Logout Selected</button>
+            <button type="button" id="clearAllBtn" class="btn btn-danger" style="background: linear-gradient(135deg, #dc3545, #c82333); margin-left: 10px;">Clear All Accounts</button>
           </div>
           
           <div id="sessionStatus" class="status-message"></div>
@@ -571,27 +578,19 @@
                             <input type="number" id="maxPosts" value="5" min="1" max="50">
                             <small>Number of posts to interact with</small>
                         </div>
-                        <div class="form-group">
-                            <label for="platform">Platform</label>
-                            <select id="autoPlatform">
-                                <option value="instagram">Instagram</option>
-                                <option value="x">X (Twitter)</option>
-                                <option value="threads">Threads</option>
-                            </select>
-                            <small>Which platform to use</small>
-                        </div>
+
                     </div>
                     
                     <div class="row">
-                        <div class="form-group">
+                        <div class="form-group" id="hashtagField">
                             <label for="hashtag">Hashtag</label>
                             <input type="text" id="hashtag" placeholder="#fitness #motivation">
-                            <small>Search for posts with these hashtags</small>
+                            <small id="hashtagHelp">Search for posts with these hashtags</small>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" id="keywordsField" style="display: none;">
                             <label for="keywords">Keywords</label>
                             <input type="text" id="keywords" placeholder="workout, gym, fitness">
-                            <small>Or search by keywords in post content</small>
+                            <small>Search by keywords in post content</small>
                         </div>
                     </div>
                 </div>
@@ -700,6 +699,7 @@
             
             // Update session dropdown
             updateSessionDropdown();
+            updateSearchFields();
         }
 
         // Update session dropdown with available sessions
@@ -707,6 +707,10 @@
             const loginDropdown = document.getElementById('activeSession');
             const autoDropdown = document.getElementById('autoActiveSession');
             const sessions = getAvailableSessions();
+            
+            // Preserve current selections
+            const currentLoginSelection = loginDropdown ? loginDropdown.value : '';
+            const currentAutoSelection = autoDropdown ? autoDropdown.value : '';
             
             // Update login tab dropdown
             if (loginDropdown) {
@@ -722,6 +726,10 @@
                         loginDropdown.appendChild(option);
                     });
                 }
+                // Restore previous selection if it still exists
+                if (currentLoginSelection && sessions.includes(currentLoginSelection)) {
+                    loginDropdown.value = currentLoginSelection;
+                }
             }
             
             // Update auto comment tab dropdown
@@ -734,9 +742,28 @@
                     sessions.forEach(session => {
                         const option = document.createElement('option');
                         option.value = session;
-                        option.textContent = session;
+                        
+                        // Get platform info for this session
+                        let displayText = session;
+                        try {
+                            const sessionData = localStorage.getItem(`session_${session}`);
+                            if (sessionData) {
+                                const parsed = JSON.parse(sessionData);
+                                const platform = parsed.platform || 'unknown';
+                                const platformEmoji = platform === 'instagram' ? '📷' : platform === 'threads' ? '🧵' : platform === 'x' ? '🐦' : '📱';
+                                displayText = `${platformEmoji} ${session} (${platform})`;
+                            }
+                        } catch (error) {
+                            // Fallback to just session name
+                        }
+                        
+                        option.textContent = displayText;
                         autoDropdown.appendChild(option);
                     });
+                }
+                // Restore previous selection if it still exists
+                if (currentAutoSelection && sessions.includes(currentAutoSelection)) {
+                    autoDropdown.value = currentAutoSelection;
                 }
             }
         }
@@ -759,6 +786,73 @@
             const statusDiv = document.getElementById('sessionStatus');
             statusDiv.textContent = message;
             statusDiv.className = `status-message ${type}`;
+        }
+
+        // Update search fields based on selected account's platform
+        function updateSearchFields() {
+            const activeSession = document.getElementById('autoActiveSession').value;
+            const hashtagField = document.getElementById('hashtagField');
+            const keywordsField = document.getElementById('keywordsField');
+            const hashtagHelp = document.getElementById('hashtagHelp');
+            
+            if (!activeSession) {
+                // No account selected - show hashtag field by default
+                if (hashtagField) hashtagField.style.display = 'block';
+                if (keywordsField) keywordsField.style.display = 'none';
+                if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
+                return;
+            }
+            
+            // Get platform from session data
+            let platform = 'instagram'; // default
+            try {
+                const sessionData = localStorage.getItem(`session_${activeSession}`);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    platform = parsed.platform || 'instagram';
+                }
+            } catch (error) {
+                console.log('Could not get platform from session data, using default');
+            }
+            
+            // Update field visibility based on platform
+            if (platform === 'x') {
+                // X (Twitter) - show both fields as they work differently
+                if (hashtagField) hashtagField.style.display = 'block';
+                if (keywordsField) keywordsField.style.display = 'block';
+                if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
+            } else {
+                // Instagram and Threads - only show hashtag field
+                if (hashtagField) hashtagField.style.display = 'block';
+                if (keywordsField) keywordsField.style.display = 'none';
+                if (platform === 'threads') {
+                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts containing this text';
+                } else {
+                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
+                }
+            }
+        }
+
+        // Clear all localStorage session data
+        function clearAllSessions() {
+            if (confirm('Are you sure you want to clear all saved account sessions? This action cannot be undone.')) {
+                // Clear all session-related localStorage entries
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('session_')) {
+                        keysToRemove.push(key);
+                    }
+                }
+                
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                
+                // Update UI
+                updateSessionDropdowns();
+                updateSearchFields();
+                updateSessionStatus('All account sessions cleared from browser storage', 'success');
+                console.log(`Cleared ${keysToRemove.length} session entries from localStorage`);
+            }
         }
 
         function validateForm() {
@@ -791,6 +885,8 @@
         document.getElementById('checkSessionBtn').addEventListener('click', checkSession);
         document.getElementById('loginBtn').addEventListener('click', login);
         document.getElementById('logoutBtn').addEventListener('click', logout);
+        document.getElementById('clearAllBtn').addEventListener('click', clearAllSessions);
+        document.getElementById('autoActiveSession').addEventListener('change', updateSearchFields);
         
         // Add debugging to run button
         const runBtn = document.getElementById('runBtn');
@@ -858,11 +954,16 @@
             const sessionName = document.getElementById('sessionName').value;
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            const assistantId = document.getElementById('assistantId').value;
             const headful = document.getElementById('headful').checked;
-
 
             if (!platform || !sessionName) {
                 updateSessionStatus('Please fill in platform and account name', 'error');
+                return;
+            }
+
+            if (!assistantId || !assistantId.startsWith('asst_')) {
+                updateSessionStatus('Please enter a valid OpenAI Assistant ID (starts with asst_)', 'error');
                 return;
             }
 
@@ -878,6 +979,7 @@
                         sessionName,
                         username,
                         password,
+                        assistantId,
                         headful
                     })
                 });
@@ -885,14 +987,16 @@
                 const result = await response.json();
                 if (result.ok) {
                     updateSessionStatus(`✅ Successfully logged in as ${sessionName}`, 'success');
-                    // Save session to localStorage for dropdown
-                    localStorage.setItem(`session_${sessionName}`, JSON.stringify({ platform, username }));
+                    // Save session to localStorage for dropdown (include assistantId)
+                    localStorage.setItem(`session_${sessionName}`, JSON.stringify({ platform, username, assistantId }));
                     updateSessionDropdown();
+                    updateSearchFields();
                     
                     // Auto-select this session in the auto comment dropdown
                     const autoDropdown = document.getElementById('autoActiveSession');
                     if (autoDropdown) {
                         autoDropdown.value = sessionName;
+                        updateSearchFields(); // Update fields for the newly selected account
                     }
                 } else {
                     updateSessionStatus('Login failed: ' + result.message, 'error');
@@ -940,6 +1044,7 @@
                     // Remove from localStorage
                     localStorage.removeItem(`session_${activeSession}`);
                     updateSessionDropdown();
+                    updateSearchFields();
                 } else {
                     updateSessionStatus('Logout failed: ' + result.message, 'error');
                 }
@@ -974,7 +1079,18 @@
             const comment = document.getElementById('comment').value.trim();
             const likePost = document.getElementById('likePost').checked;
             const headful = document.getElementById('autoHeadful').checked;
-            const platform = document.getElementById('autoPlatform').value;
+            // Get platform from session data
+            let platform = 'instagram'; // default
+            try {
+                const sessionData = localStorage.getItem(`session_${activeSession}`);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    platform = parsed.platform || 'instagram';
+                }
+            } catch (error) {
+                console.log('Could not get platform from session data, using default');
+                platform = 'instagram';
+            }
 
             // Validation
             if (!hashtag && !keywords) {

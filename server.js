@@ -53,6 +53,7 @@ app.post('/run', async (req, res) => {
     useAI = false,
     aiContext = '',
     likePost = false,
+    assistantId,
   } = req.body || {};
 
   // Use environment variables if username/password not provided in request
@@ -81,6 +82,7 @@ app.post('/run', async (req, res) => {
       useAI: Boolean(useAI),
       aiContext: aiContext || '',
       likePost: Boolean(likePost),
+      assistantId,
     });
     
     console.log('runAction completed with result:', { ok: result.ok, message: result.message });
