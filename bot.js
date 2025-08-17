@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import { hasMyCommentAndCache, clearCommentCache, getCommentCacheStats, debugCommentDetection } from './utils/igHasMyComment.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
-import { xHasMyComment, addToCommentedCache as addToXCommentedCache, clearXCommentCache, isTweetAlreadyLiked, getCacheStats as getXCacheStats } from './utils/xHasMyComment.js';
+// X cache imports removed - will be rebuilt from scratch
 
 puppeteer.use(StealthPlugin());
 
@@ -649,62 +649,11 @@ async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), m
 // Global variable to track scroll depth across discovery calls
 let xSearchScrollDepth = 0;
 
-// Debug function to inspect page structure
-async function debugXPageStructure(page) {
-  console.log('🔍 === DEBUGGING X PAGE STRUCTURE ===');
-  
-  const pageInfo = await page.evaluate(() => {
-    const url = window.location.href;
-    const title = document.title;
-    const articles = document.querySelectorAll('article').length;
-    const tweets = document.querySelectorAll('[data-testid="tweet"]').length;
-    const tweetTexts = document.querySelectorAll('[data-testid="tweetText"]').length;
-    const allLinks = document.querySelectorAll('a').length;
-    const statusLinks = document.querySelectorAll('a[href*="/status/"]').length;
-    
-    // Sample some article structures
-    const sampleArticles = Array.from(document.querySelectorAll('article')).slice(0, 3).map((article, i) => {
-      const links = Array.from(article.querySelectorAll('a')).map(a => a.getAttribute('href')).filter(href => href);
-      const testIds = Array.from(article.querySelectorAll('[data-testid]')).map(el => el.getAttribute('data-testid'));
-      return {
-        index: i,
-        links: links.slice(0, 5), // First 5 links
-        testIds: testIds.slice(0, 10) // First 10 test IDs
-      };
-    });
-    
-    return {
-      url,
-      title,
-      articles,
-      tweets,
-      tweetTexts,
-      allLinks,
-      statusLinks,
-      sampleArticles
-    };
-  });
-  
-  console.log('🔍 Page URL:', pageInfo.url);
-  console.log('🔍 Page Title:', pageInfo.title);
-  console.log('🔍 Articles found:', pageInfo.articles);
-  console.log('🔍 [data-testid="tweet"] elements:', pageInfo.tweets);
-  console.log('🔍 [data-testid="tweetText"] elements:', pageInfo.tweetTexts);
-  console.log('🔍 Total links:', pageInfo.allLinks);
-  console.log('🔍 Links with /status/:', pageInfo.statusLinks);
-  
-  console.log('🔍 Sample article structures:');
-  pageInfo.sampleArticles.forEach(article => {
-    console.log(`  Article ${article.index}:`);
-    console.log(`    Links: ${JSON.stringify(article.links)}`);
-    console.log(`    Test IDs: ${JSON.stringify(article.testIds)}`);
-  });
-  
-  console.log('🔍 === END DEBUG ===');
-}
+// X debug functions removed - will be rebuilt
 
-// Simple discovery function for basic operations (discover, like)
-async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
+// X discovery functions removed - will be rebuilt
+
+async function TEMP_PLACEHOLDER_discoverXPosts(page, searchCriteria, maxPosts = 10) {
   try {
     console.log(`🐦 Discovering X posts with criteria: ${JSON.stringify(searchCriteria)}`);
     
@@ -801,8 +750,7 @@ async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
   }
 }
 
-// Bulk discovery function for auto-comment (collects many tweets at once)
-async function discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
+async function TEMP_PLACEHOLDER_discoverXPostsBulk(page, searchCriteria, targetCount = 50) {
   try {
     console.log(`🐦 Collecting X posts in bulk with criteria: ${JSON.stringify(searchCriteria)}`);
     console.log(`🐦 Target: ${targetCount} posts to collect`);
@@ -2303,79 +2251,214 @@ async function ensureXLoggedIn(page, { username, password }) {
   }
 }
 
-// Like function for when navigating to a specific tweet URL
-async function xLike(page, tweetUrl) {
+// X Keyboard Navigation Auto-Comment System
+async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username }) {
   try {
-    console.log(`🐦 Starting X like process for: ${tweetUrl}`);
+    console.log('🐦 Starting X auto-comment with keyboard navigation approach');
+    console.log(`🐦 Target: ${maxPosts} comments`);
+    console.log(`🐦 Search criteria: ${JSON.stringify(searchCriteria)}`);
     
-    await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-    await sleep(2000); // Allow page to settle
+    const { hashtag, keywords } = searchCriteria;
+    let searchTerm;
     
-    return await xLikeCurrentPage(page);
-    
-  } catch (error) {
-    console.error(`❌ X like error: ${error.message}`);
-    throw new Error(`X like failed: ${error.message}`);
-  }
-}
-
-// Like function for current page (more efficient for auto-comment workflow)
-async function xLikeCurrentPage(page) {
-  try {
-    console.log('🐦 Attempting to like current tweet...');
-    
-    // Check if already liked
-    const alreadyLiked = await page.evaluate(() => {
-      const likeButton = document.querySelector('[data-testid="unlike"]');
-      return !!likeButton;
-    });
-    
-    if (alreadyLiked) {
-      console.log('🐦 Tweet already liked, skipping');
-      return { success: true, message: 'Already liked' };
+    if (hashtag) {
+      searchTerm = hashtag.startsWith('#') ? hashtag : `#${hashtag}`;
+    } else if (keywords) {
+      searchTerm = keywords;
+    } else {
+      throw new Error('Either hashtag or keywords required');
     }
     
-    // Wait for and click like button
-    console.log('🐦 Looking for like button...');
+    // Navigate to search
+    const searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
+    console.log(`🐦 Navigating to search: ${searchUrl}`);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    await sleep(3000); // Let search results load
     
-    const likeClicked = await clickFirstMatching(page, [
-      '[data-testid="like"]',
-      'div[data-testid="like"]',
-      'button[data-testid="like"]',
-      '[aria-label*="Like"]',
-      'button[aria-label*="Like"]'
-    ]);
+    let successfulComments = 0;
+    let currentPost = 0;
+    const results = [];
     
-    if (!likeClicked) {
-      // Try text-based clicking as fallback
-      console.log('🐦 Trying text-based like clicking...');
-      const textClicked = await clickByText(page, ['Like', 'like']);
-      if (!textClicked) {
-        throw new Error('Could not find or click like button');
+    console.log('🐦 Starting keyboard navigation through search results...');
+    
+    while (successfulComments < maxPosts && currentPost < maxPosts * 3) { // Safety limit
+      currentPost++;
+      console.log(`\n🐦 [${currentPost}] Processing post ${currentPost} (${successfulComments}/${maxPosts} completed)`);
+      
+      try {
+        // Step 1: Use 'k' to advance to next result
+        if (currentPost > 1) {
+          console.log('⌨️ Pressing "k" to advance to next post...');
+          await page.keyboard.press('k');
+          await sleep(500);
+        } else {
+          console.log('⌨️ Pressing "k" to select first post...');
+          await page.keyboard.press('k');
+          await sleep(500);
+        }
+        
+        // Step 2: Use 'Enter' to open the post
+        console.log('⌨️ Pressing "Enter" to open post...');
+        await page.keyboard.press('Enter');
+        await sleep(3000); // Wait for post to load
+        
+        // Step 3: Check if my username has already commented
+        console.log(`🔍 Checking if ${username} has already commented...`);
+        const hasMyComment = await page.evaluate((username) => {
+          // Look for username in comments
+          const commentElements = document.querySelectorAll('[data-testid="tweetText"]');
+          const userLinks = document.querySelectorAll(`a[href="/${username}"]`);
+          const userMentions = document.querySelectorAll(`a[href*="/${username}"]`);
+          
+          console.log(`Found ${commentElements.length} comment elements`);
+          console.log(`Found ${userLinks.length} user links for ${username}`);
+          console.log(`Found ${userMentions.length} user mentions for ${username}`);
+          
+          // Check if any of these indicate our comment exists
+          return userLinks.length > 1 || userMentions.length > 1; // More than 1 means we commented (1 is the original post author)
+        }, username);
+        
+        if (hasMyComment) {
+          console.log(`⏭️ ${username} has already commented on this post, skipping...`);
+          
+          // Step 4a: Use Cmd+Left Arrow to return to search results
+          console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+          await page.keyboard.down('Meta');
+          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.up('Meta');
+          await sleep(2000);
+          
+          results.push({ 
+            post: currentPost, 
+            success: false, 
+            skipped: true, 
+            reason: 'Already commented' 
+          });
+          continue;
+        }
+        
+        // Step 4b: No existing comment - proceed with commenting
+        console.log('✅ No existing comment found, proceeding to comment...');
+        
+        // Extract post content for AI if needed
+        let finalComment = comment;
+        if (useAI) {
+          console.log('🤖 Extracting post content for AI comment generation...');
+          const postContent = await page.evaluate(() => {
+            const tweetText = document.querySelector('[data-testid="tweetText"]');
+            return tweetText ? tweetText.textContent : 'Post content not found';
+          });
+          
+          console.log(`📝 Post content: "${postContent.slice(0, 100)}..."`);
+          // Generate AI comment (you'll need to implement this based on your existing AI logic)
+          finalComment = await generateAIComment(postContent, await getSessionAssistantId('x', 'default'));
+        }
+        
+        console.log(`💬 Commenting: "${finalComment.slice(0, 50)}..."`);
+        
+        // Click reply button
+        console.log('🐦 Clicking reply button...');
+        await page.waitForSelector('[data-testid="reply"]', { timeout: 10000 });
+        await page.click('[data-testid="reply"]');
+        await sleep(2000);
+        
+        // Find and fill comment textarea
+        console.log('🐦 Finding comment textarea...');
+        const textareaSelector = '[data-testid="tweetTextarea_0"] div[contenteditable="true"]';
+        await page.waitForSelector(textareaSelector, { timeout: 10000 });
+        
+        // Clear and type comment
+        await page.click(textareaSelector);
+        await sleep(500);
+        
+        // Clear existing content
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('a');
+        await page.keyboard.up('Meta');
+        await page.keyboard.press('Backspace');
+        
+        // Type comment
+        await page.type(textareaSelector, finalComment);
+        await sleep(1000);
+        
+        // Submit with Cmd+Enter
+        console.log('🐦 Submitting comment with Cmd+Enter...');
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Meta');
+        
+        await sleep(3000); // Wait for comment to post
+        
+        successfulComments++;
+        console.log(`✅ Comment posted successfully! (${successfulComments}/${maxPosts} completed)`);
+        
+        results.push({ 
+          post: currentPost, 
+          success: true, 
+          comment: finalComment 
+        });
+        
+        // Return to search results for next post
+        console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('ArrowLeft');
+        await page.keyboard.up('Meta');
+        await sleep(2000);
+        
+        // Small delay between successful comments
+        if (successfulComments < maxPosts) {
+          console.log('⏳ Waiting 2 seconds before next post...');
+          await sleep(2000);
+        }
+        
+      } catch (error) {
+        console.log(`❌ Error processing post ${currentPost}: ${error.message}`);
+        
+        // Try to return to search results
+        try {
+          await page.keyboard.down('Meta');
+          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.up('Meta');
+          await sleep(2000);
+        } catch (backError) {
+          console.log('⚠️ Could not return to search results, continuing...');
+        }
+        
+        results.push({ 
+          post: currentPost, 
+          success: false, 
+          error: error.message 
+        });
+        
+        await sleep(1000);
       }
     }
     
-    await sleep(1000);
+    console.log(`\n📊 X Auto-Comment Complete!`);
+    console.log(`✅ Successfully commented on ${successfulComments}/${maxPosts} posts`);
+    console.log(`📝 Processed ${currentPost} total posts`);
     
-    // Verify like was successful
-    const likeSuccess = await page.evaluate(() => {
-      return !!document.querySelector('[data-testid="unlike"]');
-    });
-    
-    if (likeSuccess) {
-      console.log('✅ Tweet liked successfully');
-      return { success: true };
-    } else {
-      throw new Error('Like action may not have completed successfully');
-    }
+    return {
+      ok: true,
+      message: `Successfully commented on ${successfulComments}/${maxPosts} posts`,
+      results,
+      stats: {
+        target: maxPosts,
+        successful: successfulComments,
+        processed: currentPost,
+        successRate: Math.round((successfulComments / currentPost) * 100)
+      }
+    };
     
   } catch (error) {
-    console.error(`❌ X like current page error: ${error.message}`);
-    throw new Error(`X like failed: ${error.message}`);
+    console.error('❌ X auto-comment error:', error.message);
+    throw new Error(`X auto-comment failed: ${error.message}`);
   }
 }
 
-async function xComment(page, tweetUrl, comment) {
+// REMOVED: xComment function - will be rebuilt from scratch
+
+async function TEMP_PLACEHOLDER_xComment(page, tweetUrl, comment) {
   try {
     console.log(`🐦 Starting X comment process for: ${tweetUrl}`);
     console.log(`🐦 Comment text: "${comment.slice(0, 100)}${comment.length > 100 ? '...' : ''}"`);
@@ -2493,7 +2576,7 @@ async function xCommentCurrentPage(page, comment) {
     
     // Wait for and click reply button
     console.log('🐦 Waiting for reply button...');
-    await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
+  await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
     
     const replyClicked = await clickFirstMatching(page, [
       '[data-testid="reply"]',
@@ -2590,6 +2673,212 @@ async function xCommentCurrentPage(page, comment) {
   } catch (error) {
     console.error(`❌ X comment current page error: ${error.message}`);
     throw new Error(`X comment failed: ${error.message}`);
+  }
+}
+
+// X Keyboard Navigation Auto-Comment System
+async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username }) {
+  try {
+    console.log('🐦 Starting X auto-comment with keyboard navigation approach');
+    console.log(`🐦 Target: ${maxPosts} comments`);
+    console.log(`🐦 Search criteria: ${JSON.stringify(searchCriteria)}`);
+    
+    const { hashtag, keywords } = searchCriteria;
+    let searchTerm;
+    
+    if (hashtag) {
+      searchTerm = hashtag.startsWith('#') ? hashtag : `#${hashtag}`;
+    } else if (keywords) {
+      searchTerm = keywords;
+    } else {
+      throw new Error('Either hashtag or keywords required');
+    }
+    
+    // Navigate to search
+    const searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
+    console.log(`🐦 Navigating to search: ${searchUrl}`);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    await sleep(3000); // Let search results load
+    
+    let successfulComments = 0;
+    let currentPost = 0;
+    const results = [];
+    
+    console.log('🐦 Starting keyboard navigation through search results...');
+    
+    while (successfulComments < maxPosts && currentPost < maxPosts * 3) { // Safety limit
+      currentPost++;
+      console.log(`\n🐦 [${currentPost}] Processing post ${currentPost} (${successfulComments}/${maxPosts} completed)`);
+      
+      try {
+        // Step 1: Use 'k' to advance to next result
+        if (currentPost > 1) {
+          console.log('⌨️ Pressing "k" to advance to next post...');
+          await page.keyboard.press('k');
+          await sleep(500);
+        } else {
+          console.log('⌨️ Pressing "k" to select first post...');
+          await page.keyboard.press('k');
+          await sleep(500);
+        }
+        
+        // Step 2: Use 'Enter' to open the post
+        console.log('⌨️ Pressing "Enter" to open post...');
+        await page.keyboard.press('Enter');
+        await sleep(3000); // Wait for post to load
+        
+        // Step 3: Check if my username has already commented
+        console.log(`🔍 Checking if ${username} has already commented...`);
+        const hasMyComment = await page.evaluate((username) => {
+          // Look for username in comments section
+          const commentElements = document.querySelectorAll('[data-testid="tweetText"]');
+          const userLinks = document.querySelectorAll(`a[href="/${username}"]`);
+          const userMentions = document.querySelectorAll(`a[href*="/${username}"]`);
+          
+          console.log(`Found ${commentElements.length} comment elements`);
+          console.log(`Found ${userLinks.length} user links for ${username}`);
+          console.log(`Found ${userMentions.length} user mentions for ${username}`);
+          
+          // Check if any of these indicate our comment exists
+          return userLinks.length > 1 || userMentions.length > 1; // More than 1 means we commented (1 is the original post author)
+        }, username);
+        
+        if (hasMyComment) {
+          console.log(`⏭️ ${username} has already commented on this post, skipping...`);
+          
+          // Step 4a: Use Cmd+Left Arrow to return to search results
+          console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+          await page.keyboard.down('Meta');
+          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.up('Meta');
+          await sleep(2000);
+          
+          results.push({ 
+            post: currentPost, 
+            success: false, 
+            skipped: true, 
+            reason: 'Already commented' 
+          });
+          continue;
+        }
+        
+        // Step 4b: No existing comment - proceed with commenting
+        console.log('✅ No existing comment found, proceeding to comment...');
+        
+        // Extract post content for AI if needed
+        let finalComment = comment;
+        if (useAI) {
+          console.log('🤖 Extracting post content for AI comment generation...');
+          const postContent = await page.evaluate(() => {
+            const tweetText = document.querySelector('[data-testid="tweetText"]');
+            return tweetText ? tweetText.textContent : 'Post content not found';
+          });
+          
+          console.log(`📝 Post content: "${postContent.slice(0, 100)}..."`);
+          // Generate AI comment using existing function
+          const sessionAssistantId = await getSessionAssistantId('x', username);
+          finalComment = await generateAIComment(postContent, sessionAssistantId);
+        }
+        
+        console.log(`💬 Commenting: "${finalComment.slice(0, 50)}..."`);
+        
+        // Click reply button
+        console.log('🐦 Clicking reply button...');
+        await page.waitForSelector('[data-testid="reply"]', { timeout: 10000 });
+        await page.click('[data-testid="reply"]');
+        await sleep(2000);
+        
+        // Find and fill comment textarea
+        console.log('🐦 Finding comment textarea...');
+        const textareaSelector = '[data-testid="tweetTextarea_0"] div[contenteditable="true"]';
+        await page.waitForSelector(textareaSelector, { timeout: 10000 });
+        
+        // Clear and type comment
+        await page.click(textareaSelector);
+        await sleep(500);
+        
+        // Clear existing content
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('a');
+        await page.keyboard.up('Meta');
+        await page.keyboard.press('Backspace');
+        
+        // Type comment
+        await page.type(textareaSelector, finalComment);
+        await sleep(1000);
+        
+        // Submit with Cmd+Enter
+        console.log('🐦 Submitting comment with Cmd+Enter...');
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Meta');
+        
+        await sleep(3000); // Wait for comment to post
+        
+        successfulComments++;
+        console.log(`✅ Comment posted successfully! (${successfulComments}/${maxPosts} completed)`);
+        
+        results.push({ 
+          post: currentPost, 
+          success: true, 
+          comment: finalComment 
+        });
+        
+        // Return to search results for next post
+        console.log('⌨️ Pressing "Cmd+Left Arrow" to return to search...');
+        await page.keyboard.down('Meta');
+        await page.keyboard.press('ArrowLeft');
+        await page.keyboard.up('Meta');
+        await sleep(2000);
+        
+        // Small delay between successful comments
+        if (successfulComments < maxPosts) {
+          console.log('⏳ Waiting 2 seconds before next post...');
+          await sleep(2000);
+        }
+        
+      } catch (error) {
+        console.log(`❌ Error processing post ${currentPost}: ${error.message}`);
+        
+        // Try to return to search results
+        try {
+          await page.keyboard.down('Meta');
+          await page.keyboard.press('ArrowLeft');
+          await page.keyboard.up('Meta');
+          await sleep(2000);
+        } catch (backError) {
+          console.log('⚠️ Could not return to search results, continuing...');
+        }
+        
+        results.push({ 
+          post: currentPost, 
+          success: false, 
+          error: error.message 
+        });
+        
+        await sleep(1000);
+      }
+    }
+    
+    console.log(`\n📊 X Auto-Comment Complete!`);
+    console.log(`✅ Successfully commented on ${successfulComments}/${maxPosts} posts`);
+    console.log(`📝 Processed ${currentPost} total posts`);
+    
+    return {
+      ok: true,
+      message: `Successfully commented on ${successfulComments}/${maxPosts} posts`,
+      results,
+      stats: {
+        target: maxPosts,
+        successful: successfulComments,
+        processed: currentPost,
+        successRate: currentPost > 0 ? Math.round((successfulComments / currentPost) * 100) : 0
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ X auto-comment error:', error.message);
+    throw new Error(`X auto-comment failed: ${error.message}`);
   }
 }
 
@@ -3877,26 +4166,15 @@ export async function runAction(options) {
 
       await ensureXLoggedIn(page, { username, password });
       
-      if (action === 'discover') {
-        const posts = await discoverXPosts(page, searchCriteria, maxPosts);
-        return { ok: true, message: `Found ${posts.length} X posts`, posts };
+      if (action === 'auto-comment') {
+        return await xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username });
       }
       
-      if (action === 'auto-comment') {
-        console.log(`🐦 Starting X auto-comment with criteria: ${JSON.stringify(searchCriteria)}`);
-        
-        // Reset scroll depth for new auto-comment session
-        xSearchScrollDepth = 0;
-        
-        const results = [];
-        const targetSuccesses = Math.max(1, Number(maxPosts) || 1);
-        let successes = 0;
-        let attempts = 0;
-        
-        console.log(`🐦 Target: ${targetSuccesses} successful comments (no attempt limit - will continue until target is reached)`);
-        
-        // Get X cache stats
-        const cacheStats = getXCacheStats();
+      return { ok: false, message: 'X functionality limited to login and auto-comment' };
+    }
+
+    if (platform === 'threads') {
+      if (action === 'login') {
         console.log(`📊 X Comment Cache: ${cacheStats.total} previously commented tweets`);
         
         // Step 1: Collect a large batch of tweets upfront
