@@ -26,6 +26,19 @@ function saveCache(cache) {
   }
 }
 
+// Clear all cache entries
+function clearXCommentCache() {
+  try {
+    const emptyCache = [];
+    saveCache(emptyCache);
+    console.log('✅ X comment cache cleared');
+    return true;
+  } catch (error) {
+    console.log('Error clearing X comment cache:', error.message);
+    return false;
+  }
+}
+
 // Get cache statistics
 function getCacheStats() {
   const cache = loadCache();
@@ -261,6 +274,7 @@ export async function xHasMyComment(page, tweetUrl) {
 export {
   loadCache,
   saveCache,
+  clearXCommentCache,
   getCacheStats,
   getTweetIdFromUrl,
   hasCommentedInCache,

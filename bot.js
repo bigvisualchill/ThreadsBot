@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import { hasMyCommentAndCache, clearCommentCache, getCommentCacheStats, debugCommentDetection } from './utils/igHasMyComment.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
-import { xHasMyComment, addToCommentedCache as addToXCommentedCache, isTweetAlreadyLiked, getCacheStats as getXCacheStats } from './utils/xHasMyComment.js';
+import { xHasMyComment, addToCommentedCache as addToXCommentedCache, clearXCommentCache, isTweetAlreadyLiked, getCacheStats as getXCacheStats } from './utils/xHasMyComment.js';
 
 puppeteer.use(StealthPlugin());
 
@@ -2108,12 +2108,26 @@ async function ensureXLoggedIn(page, { username, password }) {
   }
 }
 
+// Like function for when navigating to a specific tweet URL
 async function xLike(page, tweetUrl) {
   try {
     console.log(`🐦 Starting X like process for: ${tweetUrl}`);
     
     await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await sleep(2000); // Allow page to settle
+    
+    return await xLikeCurrentPage(page);
+    
+  } catch (error) {
+    console.error(`❌ X like error: ${error.message}`);
+    throw new Error(`X like failed: ${error.message}`);
+  }
+}
+
+// Like function for current page (more efficient for auto-comment workflow)
+async function xLikeCurrentPage(page) {
+  try {
+    console.log('🐦 Attempting to like current tweet...');
     
     // Check if already liked
     const alreadyLiked = await page.evaluate(() => {
@@ -2127,17 +2141,23 @@ async function xLike(page, tweetUrl) {
     }
     
     // Wait for and click like button
-    console.log('🐦 Waiting for like button...');
-  await page.waitForSelector('[data-testid="like"]', { timeout: 20000 });
+    console.log('🐦 Looking for like button...');
     
     const likeClicked = await clickFirstMatching(page, [
       '[data-testid="like"]',
       'div[data-testid="like"]',
-      'button[data-testid="like"]'
+      'button[data-testid="like"]',
+      '[aria-label*="Like"]',
+      'button[aria-label*="Like"]'
     ]);
     
     if (!likeClicked) {
-      throw new Error('Could not find or click like button');
+      // Try text-based clicking as fallback
+      console.log('🐦 Trying text-based like clicking...');
+      const textClicked = await clickByText(page, ['Like', 'like']);
+      if (!textClicked) {
+        throw new Error('Could not find or click like button');
+      }
     }
     
     await sleep(1000);
@@ -2155,7 +2175,7 @@ async function xLike(page, tweetUrl) {
     }
     
   } catch (error) {
-    console.error(`❌ X like error: ${error.message}`);
+    console.error(`❌ X like current page error: ${error.message}`);
     throw new Error(`X like failed: ${error.message}`);
   }
 }
@@ -2266,6 +2286,114 @@ async function xComment(page, tweetUrl, comment) {
     
   } catch (error) {
     console.error(`❌ X comment error: ${error.message}`);
+    throw new Error(`X comment failed: ${error.message}`);
+  }
+}
+
+// Comment function for current page (more efficient for auto-comment workflow)
+async function xCommentCurrentPage(page, comment) {
+  try {
+    console.log(`🐦 Starting comment on current page...`);
+    console.log(`🐦 Comment text: "${comment.slice(0, 100)}${comment.length > 100 ? '...' : ''}"`);
+    
+    // Wait for and click reply button
+    console.log('🐦 Waiting for reply button...');
+    await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
+    
+    const replyClicked = await clickFirstMatching(page, [
+      '[data-testid="reply"]',
+      'div[data-testid="reply"]',
+      'button[data-testid="reply"]'
+    ]);
+    
+    if (!replyClicked) {
+      throw new Error('Could not find or click reply button');
+    }
+    
+    await sleep(2000); // Wait for reply dialog to open
+    
+    // Find and type in comment textarea
+    console.log('🐦 Looking for comment textarea...');
+    const textareaSelectors = [
+      '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
+      'div[data-testid="tweetTextarea_0"]',
+      'div[contenteditable="true"][data-testid*="textInput"]',
+      'div[role="textbox"][contenteditable="true"]'
+    ];
+    
+    let textareaFound = false;
+    for (const selector of textareaSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        console.log(`🐦 Found textarea with selector: ${selector}`);
+        
+        // Clear any existing text and type comment
+        await page.click(selector);
+        await sleep(500); // Wait for focus
+        
+        // Clear existing content more thoroughly
+        await page.evaluate((sel) => {
+          const element = document.querySelector(sel);
+          if (element) {
+            element.innerHTML = '';
+            element.textContent = '';
+            element.value = '';
+            // Trigger focus and selection events
+            element.focus();
+            element.click();
+          }
+        }, selector);
+        
+        await sleep(300); // Wait for DOM to update after clearing
+        
+        // Select all and delete any remaining content (cross-platform)
+        try {
+          await page.keyboard.down('Meta'); // Cmd+A on Mac
+          await page.keyboard.press('a');
+          await page.keyboard.up('Meta');
+        } catch (e) {
+          // Fallback for Windows/Linux
+          await page.keyboard.down('Control'); // Ctrl+A
+          await page.keyboard.press('a');
+          await page.keyboard.up('Control');
+        }
+        await page.keyboard.press('Backspace');
+        
+        await sleep(200); // Small delay before typing
+        await page.type(selector, comment, { delay: 80 }); // Slightly slower typing
+        textareaFound = true;
+        break;
+      } catch (e) {
+        console.log(`🐦 Selector ${selector} not found, trying next...`);
+        continue;
+      }
+    }
+    
+    if (!textareaFound) {
+      throw new Error('Could not find comment textarea');
+    }
+    
+    await sleep(1000);
+    
+    // Submit reply using Cmd+Enter (much more reliable than button clicking)
+    console.log('🐦 Submitting reply with Cmd+Enter...');
+    await page.keyboard.down('Meta'); // Cmd key on Mac
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Meta');
+    
+    // Also try Ctrl+Enter for Windows/Linux compatibility
+    await sleep(500);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('Enter'); 
+    await page.keyboard.up('Control');
+    
+    await sleep(3000); // Wait for comment to be posted
+    
+    console.log('✅ X comment posted successfully');
+    return { success: true };
+    
+  } catch (error) {
+    console.error(`❌ X comment current page error: ${error.message}`);
     throw new Error(`X comment failed: ${error.message}`);
   }
 }
@@ -3619,31 +3747,33 @@ export async function runAction(options) {
               
               console.log(`💬 Generated comment: "${finalComment.slice(0, 100)}${finalComment.length > 100 ? '...' : ''}"`);
               
-              // Perform like if requested
+              // Navigate to the tweet page once
+              console.log(`🐦 Navigating to tweet: ${tweetUrl}`);
+              await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+              await sleep(2000); // Allow page to settle
+              
+              // Perform like FIRST if requested (more natural workflow)
               if (likePost) {
-                console.log(`❤️ Attempting to like tweet...`);
+                console.log(`❤️ Attempting to like tweet first...`);
                 try {
-                  // Check if already liked first
-                  await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
-                  const alreadyLiked = await isTweetAlreadyLiked(page);
-                  
-                  if (!alreadyLiked) {
-                    await xLike(page, tweetUrl);
-                    console.log(`✅ Tweet liked successfully`);
-                  } else {
-                    console.log(`⏭️ Tweet already liked, skipping like`);
-                  }
+                  await xLikeCurrentPage(page);
+                  console.log(`✅ Tweet liked successfully`);
                 } catch (likeError) {
                   console.log(`⚠️ Like failed (continuing with comment): ${likeError.message}`);
                 }
               }
               
-              // Post comment
+              // Then comment on the post (already on the right page)
               console.log(`💬 Posting comment...`);
-              await xComment(page, tweetUrl, finalComment);
+              const commentResult = await xCommentCurrentPage(page, finalComment);
               
-              // Add to cache after successful comment
-              addToXCommentedCache(tweetUrl, 'commented');
+              // Only add to cache if comment was actually successful
+              if (commentResult && commentResult.success) {
+                addToXCommentedCache(tweetUrl, 'commented');
+                console.log(`✅ Comment verified successful, added to cache`);
+              } else {
+                throw new Error('Comment did not complete successfully');
+              }
               
               successes++;
               console.log(`✅ Comment posted successfully! (${successes}/${targetSuccesses} completed)`);
