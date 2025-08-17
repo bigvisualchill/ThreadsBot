@@ -299,3 +299,36 @@ Puppeteer Social/
 - **Performance**: 3-4x faster execution with optimized delays and early termination
 
 **Current State**: Threads platform fully functional with Instagram-level reliability. Duplicate detection works correctly, no accidental UI clicks, and smart search ensures targets are always met when fresh content is available.
+
+### UI Enhancement and Account Management Phase
+**Date**: Current Session  
+**Changes**: Comprehensive UI improvements and account management features for better user experience and cleaner interface.
+
+**Major Updates**:
+1. **Account Management System**: Added "Clear All Accounts" functionality
+   - New button in Login & Setup tab to clear all stored sessions
+   - Removes session files from `.sessions/` directory
+   - Clears browser localStorage data for frontend session management  
+   - Resets comment cache files for fresh duplicate detection
+   - Includes confirmation dialog to prevent accidental clearing
+
+2. **Platform Detection Enhancement**: Removed platform dropdown from Auto Comment tab
+   - Platform now auto-detected from selected account's session data
+   - Eliminates user error of selecting wrong platform for account
+   - Streamlined interface with one less field to configure
+   - Maintains consistency with session-based platform detection used elsewhere
+
+3. **Dynamic Search Field Visibility**: Platform-specific search fields
+   - **Instagram**: Shows only hashtag field (keywords functionality is broken)
+   - **X (Twitter)**: Shows both hashtag and keywords fields (they work differently)
+   - **Threads**: Shows only hashtag field with updated help text ("Search for posts containing this text")
+   - Automatic field updates when switching between accounts
+   - Context-aware help text that explains field functionality per platform
+
+**Technical Implementation**:
+- Added `updateSearchFields()` function for dynamic field management
+- Integrated platform detection with existing session management system
+- Enhanced event handling for account dropdown changes
+- Improved user experience with automatic UI updates
+
+**Current State**: Interface now intelligently adapts to show only relevant options based on connected account platform, with comprehensive account management and cleaner, more intuitive user experience.

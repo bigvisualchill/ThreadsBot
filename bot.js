@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
 import { hasMyCommentAndCache, clearCommentCache, getCommentCacheStats, debugCommentDetection } from './utils/igHasMyComment.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
+import { xHasMyComment, addToCommentedCache as addToXCommentedCache, isTweetAlreadyLiked, getCacheStats as getXCacheStats } from './utils/xHasMyComment.js';
 
 puppeteer.use(StealthPlugin());
 
@@ -413,10 +414,59 @@ async function clickFirstMatching(page, selectors) {
 async function clickByText(page, texts) {
   for (const text of texts) {
     const xpath = `//*[self::button or self::div or self::span or self::a][contains(normalize-space(.), ${JSON.stringify(text)})]`;
-    const elements = await page.$x(xpath);
-    if (elements.length > 0) {
+    
+    let elements = [];
+    
+    // Try page.$x first if available
+    if (page.$x) {
+      try {
+        elements = await page.$x(xpath);
+      } catch (error) {
+        console.log(`page.$x failed for text "${text}": ${error.message}`);
+      }
+    }
+    
+    // Fallback to evaluate approach
+    if (elements.length === 0) {
+      try {
+        elements = await page.evaluate((xpath) => {
+          const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          const nodes = [];
+          for (let i = 0; i < result.snapshotLength; i++) {
+            nodes.push(result.snapshotItem(i));
+          }
+          return nodes;
+        }, xpath);
+        
+        // Convert to ElementHandles if we got DOM elements
+        if (elements.length > 0 && elements[0].nodeType) {
+          // These are DOM elements, we need to click them differently
+          const clicked = await page.evaluate((xpath) => {
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            if (result.singleNodeValue) {
+              result.singleNodeValue.click();
+              return true;
+            }
+            return false;
+          }, xpath);
+          
+          if (clicked) {
+            console.log(`✅ Clicked element with text: "${text}" using evaluate`);
+            return true;
+          }
+        }
+      } catch (error) {
+        console.log(`Evaluate approach failed for text "${text}": ${error.message}`);
+      }
+    } else if (elements.length > 0) {
+      // We have ElementHandles from page.$x
+      try {
       await elements[0].click({ delay: 50 });
+        console.log(`✅ Clicked element with text: "${text}" using $x`);
       return true;
+      } catch (error) {
+        console.log(`Click failed for text "${text}": ${error.message}`);
+      }
     }
   }
   return false;
@@ -597,32 +647,113 @@ async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), m
 }
 
 async function discoverXPosts(page, searchCriteria, maxPosts = 10) {
+  try {
+    console.log(`🐦 Starting X post discovery with criteria:`, searchCriteria);
+    console.log(`🐦 Max posts requested: ${maxPosts}`);
+    console.log(`🐦 Currently discovered posts: ${discoveredPosts.size}`);
+    
   const { hashtag, keywords } = searchCriteria;
+    let searchUrl;
   
   if (hashtag) {
     const searchTerm = hashtag.startsWith('#') ? hashtag : `#${hashtag}`;
-    const url = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
-    await page.goto(url, { waitUntil: 'networkidle2' });
+      searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
+      console.log(`🐦 Searching by hashtag: ${searchTerm}`);
   } else if (keywords) {
-    const url = `https://x.com/search?q=${encodeURIComponent(keywords)}&src=typed_query&f=live`;
-    await page.goto(url, { waitUntil: 'networkidle2' });
-  }
-  
-  // Scroll to load more tweets
-  for (let i = 0; i < 3; i++) {
-    await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
-    await new Promise(resolve => setTimeout(resolve, 800));
-  }
-  
-  // Extract tweet URLs
-  const tweets = await page.$$eval('a[href*="/status/"]', (links, maxPosts) => {
-    return Array.from(new Set(links.map(link => link.getAttribute('href'))))
-      .filter(href => href.includes('/status/'))
-      .slice(0, maxPosts)
-      .map(href => href.startsWith('http') ? href : `https://x.com${href}`);
+      searchUrl = `https://x.com/search?q=${encodeURIComponent(keywords)}&src=typed_query&f=live`;
+      console.log(`🐦 Searching by keywords: ${keywords}`);
+    } else {
+      throw new Error('No search criteria provided (hashtag or keywords required)');
+    }
+    
+    console.log(`🐦 Navigating to search URL: ${searchUrl}`);
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Wait for search results to load
+    await sleep(2000);
+    
+    // Check if we're still logged in
+    const stillLoggedIn = await page.evaluate(() => {
+      return !!document.querySelector('[data-testid="AppTabBar_Home_Link"]');
+    });
+    
+    if (!stillLoggedIn) {
+      throw new Error('Lost X session during search - please re-login');
+    }
+    
+    // Enhanced scrolling to load more tweets
+    console.log(`🐦 Scrolling to load more tweets...`);
+    for (let i = 0; i < 5; i++) {
+      const beforeScroll = await page.evaluate(() => document.querySelectorAll('a[href*="/status/"]').length);
+      
+      await page.evaluate(() => {
+        window.scrollBy(0, window.innerHeight * 2);
+      });
+      await sleep(1500); // Longer wait for content to load
+      
+      const afterScroll = await page.evaluate(() => document.querySelectorAll('a[href*="/status/"]').length);
+      console.log(`🐦 Scroll ${i + 1}: Found ${afterScroll} tweet links (was ${beforeScroll})`);
+      
+      // If no new content loaded, break early
+      if (afterScroll === beforeScroll && i > 1) {
+        console.log(`🐦 No new content after scroll ${i + 1}, stopping`);
+        break;
+      }
+    }
+    
+    // Extract tweet URLs with enhanced filtering
+    console.log(`🐦 Extracting tweet URLs...`);
+    const tweets = await page.evaluate((maxPosts) => {
+      const links = Array.from(document.querySelectorAll('a[href*="/status/"]'));
+      console.log(`Found ${links.length} potential tweet links`);
+      
+      const uniqueUrls = new Set();
+      const tweetUrls = [];
+      
+      links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href.includes('/status/')) {
+          // Extract the tweet ID to ensure uniqueness
+          const statusMatch = href.match(/\/status\/(\d+)/);
+          if (statusMatch) {
+            const tweetId = statusMatch[1];
+            const fullUrl = href.startsWith('http') ? href : `https://x.com${href}`;
+            
+            // Remove query parameters for cleaner URLs
+            const cleanUrl = fullUrl.split('?')[0];
+            
+            if (!uniqueUrls.has(tweetId)) {
+              uniqueUrls.add(tweetId);
+              tweetUrls.push(cleanUrl);
+            }
+          }
+        }
+      });
+      
+      console.log(`Extracted ${tweetUrls.length} unique tweet URLs`);
+      return tweetUrls.slice(0, maxPosts);
   }, maxPosts);
   
-  return tweets;
+    console.log(`🐦 Raw tweets found: ${tweets.length}`);
+    console.log(`🐦 Sample tweets:`, tweets.slice(0, 3));
+    
+    // Filter out already discovered posts
+    const newTweets = tweets.filter(tweetUrl => !discoveredPosts.has(tweetUrl));
+    
+    console.log(`🐦 After filtering, new tweets: ${newTweets.length}`);
+    console.log(`🐦 Sample new tweets:`, newTweets.slice(0, 3));
+    
+    // Add new tweets to discovered set
+    newTweets.forEach(tweetUrl => discoveredPosts.add(tweetUrl));
+    
+    console.log(`🐦 Found ${tweets.length} total tweets, ${newTweets.length} new tweets (${tweets.length - newTweets.length} already discovered)`);
+    console.log(`🐦 Total discovered posts now: ${discoveredPosts.size}`);
+    
+    return newTweets;
+  } catch (error) {
+    console.error(`❌ X post discovery error: ${error.message}`);
+    throw new Error(`X post discovery failed: ${error.message}`);
+  }
 }
 
 async function getPostContent(page, postUrl, platform) {
@@ -722,24 +853,117 @@ async function getPostContent(page, postUrl, platform) {
   }
 
   if (platform === 'x') {
-    // Primary selector
+    console.log(`🐦 Extracting X tweet content from: ${postUrl}`);
+    
+    // Wait for content to load
+    await sleep(2000);
+    
+    // Enhanced X tweet content extraction with multiple strategies
     let tweetText = await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="tweetText"]');
-      return el ? el.textContent.trim() : '';
+      console.log('🐦 Starting X content extraction...');
+      
+      // Strategy 1: Primary tweet text selector
+      const primarySelector = document.querySelector('[data-testid="tweetText"]');
+      if (primarySelector && primarySelector.textContent.trim()) {
+        const text = primarySelector.textContent.trim();
+        console.log(`✅ Found primary tweet text: "${text.slice(0, 100)}..."`);
+        return text;
+      }
+      
+      // Strategy 2: Look for tweet text in article containers
+      const articles = document.querySelectorAll('article');
+      console.log(`🐦 Found ${articles.length} article containers`);
+      
+      for (const article of articles) {
+        // Look for text within language-tagged divs
+        const langDivs = article.querySelectorAll('div[lang]');
+        if (langDivs.length > 0) {
+          const combinedText = Array.from(langDivs)
+            .map(div => div.textContent?.trim() || '')
+            .filter(text => text.length > 0)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          if (combinedText && combinedText.length > 10) {
+            console.log(`✅ Found language-tagged text: "${combinedText.slice(0, 100)}..."`);
+            return combinedText;
+          }
+        }
+        
+        // Look for tweet content in spans and divs
+        const textElements = article.querySelectorAll('span, div');
+        const candidates = [];
+        
+        textElements.forEach(el => {
+          const text = el.textContent?.trim();
+          if (text && text.length > 20 && text.length < 500) {
+            // Skip elements that look like UI components
+            const isUI = text.includes('Repost') || 
+                        text.includes('Like') || 
+                        text.includes('Reply') || 
+                        text.includes('Share') ||
+                        text.includes('Show this thread') ||
+                        text.includes('Show more replies') ||
+                        text.match(/^\d+[hms]$/) || // timestamps like "2h", "5m"
+                        text.match(/^@\w+$/) || // standalone usernames
+                        text.includes('·') && text.length < 50; // metadata
+            
+            if (!isUI) {
+              candidates.push(text);
+            }
+          }
+        });
+        
+        // Find the best candidate (longest substantial text)
+        const bestCandidate = candidates
+          .filter(text => text.length > 20)
+          .sort((a, b) => {
+            // Prioritize text with hashtags, mentions, or multiple sentences
+            const aScore = (a.match(/#\w+/g) || []).length + 
+                          (a.match(/@\w+/g) || []).length + 
+                          (a.match(/[.!?]/g) || []).length;
+            const bScore = (b.match(/#\w+/g) || []).length + 
+                          (b.match(/@\w+/g) || []).length + 
+                          (b.match(/[.!?]/g) || []).length;
+            
+            if (aScore !== bScore) return bScore - aScore;
+            return b.length - a.length; // Fallback to length
+          })[0];
+        
+        if (bestCandidate) {
+          console.log(`✅ Found best candidate: "${bestCandidate.slice(0, 100)}..."`);
+          return bestCandidate;
+        }
+      }
+      
+      // Strategy 3: Fallback to any substantial text in main content area
+      const mainContent = document.querySelector('main') || document.body;
+      const allText = mainContent.textContent || '';
+      const lines = allText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 30 && line.length < 500)
+        .filter(line => {
+          // Filter out common UI text
+          return !line.includes('Home') &&
+                 !line.includes('Notifications') &&
+                 !line.includes('Messages') &&
+                 !line.includes('Bookmarks') &&
+                 !line.includes('Profile') &&
+                 !line.match(/^\d+[hms]$/);
+        });
+      
+      if (lines.length > 0) {
+        const fallbackText = lines[0];
+        console.log(`🔄 Using fallback text: "${fallbackText.slice(0, 100)}..."`);
+        return fallbackText;
+      }
+      
+      console.log('⚠️ No tweet content found');
+      return '';
     });
 
-    // Fallback: combine all language blocks inside the main article
-    if (!tweetText) {
-      tweetText = await page.evaluate(() => {
-        const article = document.querySelector('article');
-        if (!article) return '';
-        const parts = Array.from(article.querySelectorAll('div[lang]')).map(n => n.textContent?.trim() || '');
-        const combined = parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-        return combined;
-      });
-    }
-
-    console.log(`🚀 X tweet content extracted: "${(tweetText || '').slice(0, 140)}${tweetText && tweetText.length > 140 ? '…' : ''}"`);
+    console.log(`🐦 X tweet content extracted: "${(tweetText || '').slice(0, 140)}${tweetText && tweetText.length > 140 ? '…' : ''}"`);
     return tweetText || '';
   }
 
@@ -1620,55 +1844,429 @@ async function instagramComment(page, postUrl, comment, username) {
 // X (Twitter) flows
 async function ensureXLoggedIn(page, { username, password }) {
   try {
-    // Check if we're already logged in
+    console.log('🐦 Starting X login process...');
+    
+    // Navigate to home page first to check login status
     const currentUrl = page.url();
     if (!currentUrl.includes('x.com') && !currentUrl.includes('twitter.com')) {
-      await page.goto('https://x.com/home', { waitUntil: 'networkidle2' });
+      console.log('🐦 Navigating to X home page...');
+      await page.goto('https://x.com/home', { waitUntil: 'networkidle2', timeout: 30000 });
     }
     
-    const isLoggedIn = await page.evaluate(() => !!document.querySelector('[data-testid="AppTabBar_Home_Link"]'));
-    if (isLoggedIn) return true;
+    // Enhanced login detection with multiple indicators
+    const loginCheckResult = await page.evaluate(() => {
+      const debugLog = [];
+      debugLog.push('🐦 Checking X login status...');
+      
+      // Multiple login indicators for X
+      const loginIndicators = [
+        '[data-testid="AppTabBar_Home_Link"]',
+        '[data-testid="AppTabBar_Notifications_Link"]',
+        '[data-testid="AppTabBar_DirectMessage_Link"]',
+        '[data-testid="SideNav_AccountSwitcher_Button"]',
+        'a[href="/home"]',
+        'a[data-testid="AppTabBar_Profile_Link"]',
+        '[data-testid="primaryColumn"]'
+      ];
+      
+      let foundIndicators = 0;
+      loginIndicators.forEach(selector => {
+        const element = document.querySelector(selector);
+        if (element) {
+          foundIndicators++;
+          debugLog.push(`✅ Found login indicator: ${selector}`);
+        } else {
+          debugLog.push(`❌ Missing login indicator: ${selector}`);
+        }
+      });
+      
+      // Check for login/signup buttons (indicates not logged in)
+      const logoutIndicators = [
+        'a[href="/login"]',
+        'a[href="/signup"]',
+        '[data-testid="loginButton"]',
+        '[data-testid="signupButton"]'
+      ];
+      
+      let foundLogoutIndicators = 0;
+      logoutIndicators.forEach(selector => {
+        const element = document.querySelector(selector);
+        if (element) {
+          foundLogoutIndicators++;
+          debugLog.push(`⚠️ Found logout indicator: ${selector}`);
+        }
+      });
+      
+      const isLoggedIn = foundIndicators >= 2 && foundLogoutIndicators === 0;
+      debugLog.push(`🐦 Login status: ${isLoggedIn ? 'LOGGED IN' : 'NOT LOGGED IN'} (${foundIndicators} login indicators, ${foundLogoutIndicators} logout indicators)`);
+      
+      return { isLoggedIn, debugLog, foundIndicators, foundLogoutIndicators };
+    });
+    
+    // Log debug information
+    console.log('=== X Login Detection Debug ===');
+    loginCheckResult.debugLog.forEach(log => console.log(log));
+    console.log('================================');
+    
+    if (loginCheckResult.isLoggedIn) {
+      console.log('✅ Already logged in to X');
+      return true;
+    }
 
     if (!username || !password) {
       throw new Error('X session missing and no credentials provided. Provide username/password or login headfully and save a session.');
     }
 
-    await page.goto('https://x.com/login', { waitUntil: 'networkidle2' });
-    await page.waitForSelector('input[name="text"]', { timeout: 30000 });
-    await page.type('input[name="text"]', username, { delay: 20 });
-    await clickFirstMatching(page, ['div[role="button"][data-testid="LoginForm_Login_Button"]']) || await clickByText(page, ['Next']);
-    // Some accounts require @handle confirmation step
-    const passwordSelector = 'input[name="password"]';
-    await page.waitForSelector(passwordSelector, { timeout: 30000 });
-    await page.type(passwordSelector, password, { delay: 20 });
-    await clickFirstMatching(page, ['div[role="button"][data-testid="LoginForm_Login_Button"]']) || await clickByText(page, ['Log in', 'Log In']);
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+    console.log('🐦 Proceeding with X login...');
+    await page.goto('https://x.com/login', { waitUntil: 'networkidle2', timeout: 30000 });
     
-    // Verify login was successful
-    const loginSuccessful = await page.evaluate(() => !!document.querySelector('[data-testid="AppTabBar_Home_Link"]'));
-    if (!loginSuccessful) {
-      throw new Error('Login failed - please check your credentials');
+    // Wait for and fill username
+    console.log('🐦 Waiting for username field...');
+    await page.waitForSelector('input[name="text"]', { timeout: 30000 });
+    await sleep(1000); // Allow page to settle
+    
+    console.log('🐦 Entering username...');
+    await page.click('input[name="text"]');
+    await page.evaluate(() => document.querySelector('input[name="text"]').value = '');
+    await page.type('input[name="text"]', username, { delay: 50 });
+    
+    // Click Next button
+    console.log('🐦 Clicking Next button...');
+    
+    // Debug: Check what buttons are available
+    const availableButtons = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+      return buttons.map(btn => ({
+        text: btn.textContent?.trim() || '',
+        testId: btn.getAttribute('data-testid') || '',
+        ariaLabel: btn.getAttribute('aria-label') || '',
+        tagName: btn.tagName,
+        role: btn.getAttribute('role') || ''
+      })).filter(btn => btn.text || btn.testId || btn.ariaLabel);
+    });
+    
+    console.log('🐦 Available buttons on page:', availableButtons);
+    
+    // First try specific selectors for Next button
+    const nextClicked = await clickFirstMatching(page, [
+      'div[role="button"][data-testid="LoginForm_Login_Button"]',
+      '[data-testid="LoginForm_Login_Button"]',
+      'button[data-testid="LoginForm_Login_Button"]'
+    ]);
+    
+    // If that failed, try text-based clicking with more specific text matching
+    if (!nextClicked) {
+      console.log('🐦 Trying text-based Next button clicking...');
+      
+      // Use more specific text matching to avoid Apple login button
+      const textClicked = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+        for (const btn of buttons) {
+          const text = btn.textContent?.trim().toLowerCase() || '';
+          // Look for exact "next" text and avoid Apple/Google/other login buttons
+          if (text === 'next' && 
+              !text.includes('apple') && 
+              !text.includes('google') && 
+              !text.includes('continue with') &&
+              !text.includes('sign in with')) {
+            console.log(`🐦 Found Next button with text: "${btn.textContent?.trim()}"`);
+            btn.click();
+            return true;
+          }
+        }
+        
+        // Also try buttons that might have "Next" as part of longer text
+        for (const btn of buttons) {
+          const text = btn.textContent?.trim().toLowerCase() || '';
+          if (text.includes('next') && text.length < 10 &&
+              !text.includes('apple') && 
+              !text.includes('google') && 
+              !text.includes('continue with') &&
+              !text.includes('sign in with')) {
+            console.log(`🐦 Found Next button with text: "${btn.textContent?.trim()}"`);
+            btn.click();
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (!textClicked) {
+        // Try to find the primary action button (usually the Next button)
+        console.log('🐦 Trying primary action button detection...');
+        const primaryClicked = await page.evaluate(() => {
+          // Look for buttons that are likely the primary action
+          const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+          
+          // First try to find buttons with specific styling that indicates primary action
+          for (const btn of buttons) {
+            const computedStyle = window.getComputedStyle(btn);
+            const text = btn.textContent?.trim() || '';
+            
+            // Skip obvious third-party login buttons
+            if (text.toLowerCase().includes('apple') || 
+                text.toLowerCase().includes('google') ||
+                text.toLowerCase().includes('continue with') ||
+                text.toLowerCase().includes('sign in with')) {
+              continue;
+            }
+            
+            // Look for primary button styling (usually darker background)
+            const bgColor = computedStyle.backgroundColor;
+            const color = computedStyle.color;
+            
+            // X typically uses dark buttons for primary actions
+            if ((bgColor.includes('rgb(15, 20, 25)') || // X dark theme
+                 bgColor.includes('rgb(29, 155, 240)') || // X blue
+                 bgColor.includes('rgb(0, 0, 0)')) && // black
+                text.length > 0 && text.length < 15) {
+              console.log(`🐦 Found primary button: "${text}" with bg: ${bgColor}`);
+              btn.click();
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (!primaryClicked) {
+          throw new Error('Could not find Next button. Available buttons: ' + JSON.stringify(availableButtons.map(b => b.text)));
+        }
+      }
     }
     
+    console.log('🐦 Next button clicked successfully');
+    
+    await sleep(2000); // Wait for next step
+    
+    // Handle potential username verification step
+    try {
+      const needsVerification = await page.waitForSelector('input[data-testid="ocfEnterTextTextInput"]', { timeout: 5000 });
+      if (needsVerification) {
+        console.log('🐦 Username verification required, entering username again...');
+        await page.type('input[data-testid="ocfEnterTextTextInput"]', username, { delay: 50 });
+        await clickFirstMatching(page, ['div[role="button"][data-testid="ocfEnterTextNextButton"]']) || await clickByText(page, ['Next']);
+        await sleep(2000);
+      }
+    } catch (e) {
+      console.log('🐦 No username verification step needed');
+    }
+    
+    // Wait for and fill password
+    console.log('🐦 Waiting for password field...');
+    const passwordSelector = 'input[name="password"]';
+    await page.waitForSelector(passwordSelector, { timeout: 30000 });
+    await sleep(1000);
+    
+    console.log('🐦 Entering password...');
+    await page.click(passwordSelector);
+    await page.type(passwordSelector, password, { delay: 50 });
+    
+    // Click login button
+    console.log('🐦 Clicking login button...');
+    const loginClicked = await clickFirstMatching(page, [
+      'div[role="button"][data-testid="LoginForm_Login_Button"]',
+      'button[data-testid="LoginForm_Login_Button"]',
+      'div[role="button"]:has-text("Log in")'
+    ]) || await clickByText(page, ['Log in', 'Log In']);
+    
+    if (!loginClicked) {
+      throw new Error('Could not find or click login button');
+    }
+    
+    console.log('🐦 Waiting for login to complete...');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // Verify login was successful with enhanced detection
+    await sleep(3000); // Allow page to fully load
+    const loginVerification = await page.evaluate(() => {
+      const indicators = [
+        '[data-testid="AppTabBar_Home_Link"]',
+        '[data-testid="AppTabBar_Notifications_Link"]',
+        '[data-testid="primaryColumn"]',
+        'a[href="/home"]'
+      ];
+      
+      let found = 0;
+      indicators.forEach(selector => {
+        if (document.querySelector(selector)) found++;
+      });
+      
+      return found >= 2;
+    });
+    
+    if (!loginVerification) {
+      throw new Error('Login failed - could not verify successful login. Please check your credentials.');
+    }
+    
+    console.log('✅ X login successful!');
     return true;
   } catch (error) {
+    console.error('❌ X login error:', error.message);
     throw new Error(`X login error: ${error.message}`);
   }
 }
 
 async function xLike(page, tweetUrl) {
-  await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+  try {
+    console.log(`🐦 Starting X like process for: ${tweetUrl}`);
+    
+    await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(2000); // Allow page to settle
+    
+    // Check if already liked
+    const alreadyLiked = await page.evaluate(() => {
+      const likeButton = document.querySelector('[data-testid="unlike"]');
+      return !!likeButton;
+    });
+    
+    if (alreadyLiked) {
+      console.log('🐦 Tweet already liked, skipping');
+      return { success: true, message: 'Already liked' };
+    }
+    
+    // Wait for and click like button
+    console.log('🐦 Waiting for like button...');
   await page.waitForSelector('[data-testid="like"]', { timeout: 20000 });
-  await clickFirstMatching(page, ['[data-testid="like"]']);
+    
+    const likeClicked = await clickFirstMatching(page, [
+      '[data-testid="like"]',
+      'div[data-testid="like"]',
+      'button[data-testid="like"]'
+    ]);
+    
+    if (!likeClicked) {
+      throw new Error('Could not find or click like button');
+    }
+    
+    await sleep(1000);
+    
+    // Verify like was successful
+    const likeSuccess = await page.evaluate(() => {
+      return !!document.querySelector('[data-testid="unlike"]');
+    });
+    
+    if (likeSuccess) {
+      console.log('✅ Tweet liked successfully');
+      return { success: true };
+    } else {
+      throw new Error('Like action may not have completed successfully');
+    }
+    
+  } catch (error) {
+    console.error(`❌ X like error: ${error.message}`);
+    throw new Error(`X like failed: ${error.message}`);
+  }
 }
 
 async function xComment(page, tweetUrl, comment) {
-  await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+  try {
+    console.log(`🐦 Starting X comment process for: ${tweetUrl}`);
+    console.log(`🐦 Comment text: "${comment.slice(0, 100)}${comment.length > 100 ? '...' : ''}"`);
+    
+    await page.goto(tweetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await sleep(2000); // Allow page to settle
+    
+    // Click reply button
+    console.log('🐦 Waiting for reply button...');
   await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
-  await clickFirstMatching(page, ['[data-testid="reply"]']);
-  await page.waitForSelector('[data-testid="tweetTextarea_0"] div[contenteditable="true"]', { timeout: 20000 });
-  await page.type('[data-testid="tweetTextarea_0"] div[contenteditable="true"]', comment, { delay: 10 });
-  await clickFirstMatching(page, ['div[data-testid="tweetButtonInline"]', 'div[data-testid="tweetButton"]']);
+    
+    const replyClicked = await clickFirstMatching(page, [
+      '[data-testid="reply"]',
+      'div[data-testid="reply"]',
+      'button[data-testid="reply"]'
+    ]);
+    
+    if (!replyClicked) {
+      throw new Error('Could not find or click reply button');
+    }
+    
+    await sleep(2000); // Wait for reply dialog to open
+    
+    // Wait for and fill comment text area
+    console.log('🐦 Waiting for comment text area...');
+    const textareaSelectors = [
+      '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
+      'div[data-testid="tweetTextarea_0"]',
+      'div[contenteditable="true"][data-testid*="textInput"]',
+      'div[role="textbox"][contenteditable="true"]'
+    ];
+    
+    let textareaFound = false;
+    for (const selector of textareaSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 10000 });
+        console.log(`🐦 Found textarea with selector: ${selector}`);
+        
+        // Clear any existing text and type comment
+        await page.click(selector);
+        await page.evaluate((sel) => {
+          const element = document.querySelector(sel);
+          if (element) {
+            element.innerHTML = '';
+            element.textContent = '';
+          }
+        }, selector);
+        
+        await page.type(selector, comment, { delay: 50 });
+        textareaFound = true;
+        break;
+      } catch (e) {
+        console.log(`🐦 Selector ${selector} not found, trying next...`);
+        continue;
+      }
+    }
+    
+    if (!textareaFound) {
+      throw new Error('Could not find comment textarea');
+    }
+    
+    await sleep(1000);
+    
+    // Click tweet/reply button
+    console.log('🐦 Clicking tweet button...');
+    const tweetButtonSelectors = [
+      'div[data-testid="tweetButtonInline"]',
+      'div[data-testid="tweetButton"]',
+      'button[data-testid="tweetButtonInline"]',
+      'button[data-testid="tweetButton"]',
+      '[role="button"][data-testid*="tweet"]'
+    ];
+    
+    let buttonClicked = false;
+    for (const selector of tweetButtonSelectors) {
+      try {
+        const clicked = await clickFirstMatching(page, [selector]);
+        if (clicked) {
+          console.log(`🐦 Successfully clicked button: ${selector}`);
+          buttonClicked = true;
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    
+    // Fallback to text-based clicking
+    if (!buttonClicked) {
+      console.log('🐦 Trying text-based button clicking...');
+      buttonClicked = await clickByText(page, ['Reply', 'Tweet', 'Post']);
+    }
+    
+    if (!buttonClicked) {
+      throw new Error('Could not find or click tweet button');
+    }
+    
+    await sleep(3000); // Wait for comment to be posted
+    
+    console.log('✅ X comment posted successfully');
+    return { success: true };
+    
+  } catch (error) {
+    console.error(`❌ X comment error: ${error.message}`);
+    throw new Error(`X comment failed: ${error.message}`);
+  }
 }
 
 // Threads flows
@@ -2961,23 +3559,135 @@ export async function runAction(options) {
       }
       
       if (action === 'auto-comment') {
-        const posts = await discoverXPosts(page, searchCriteria, maxPosts);
-        const results = [];
+        console.log(`🐦 Starting X auto-comment with criteria: ${JSON.stringify(searchCriteria)}`);
         
-        for (const postUrl of posts) {
-          try {
-            const postContent = await getPostContent(page, postUrl, platform);
+        const results = [];
+        const targetSuccesses = Math.max(1, Number(maxPosts) || 1);
+        let successes = 0;
+        let attempts = 0;
+        const maxAttempts = targetSuccesses * 3; // Search up to 3x target to account for skips
+        
+        console.log(`🐦 Target: ${targetSuccesses} successful comments, max attempts: ${maxAttempts}`);
+        
+        // Get X cache stats
+        const cacheStats = getXCacheStats();
+        console.log(`📊 X Comment Cache: ${cacheStats.total} previously commented tweets`);
+        
+        while (successes < targetSuccesses && attempts < maxAttempts) {
+          console.log(`\n🐦 === Batch ${Math.floor(attempts / 10) + 1} ===`);
+          
+          // Get a batch of tweets to check
+          const batchSize = Math.min(10, maxAttempts - attempts);
+          const tweets = await discoverXPosts(page, searchCriteria, batchSize);
+          
+          if (tweets.length === 0) {
+            console.log(`⚠️ No more tweets found in search results`);
+            break;
+          }
+          
+          console.log(`🐦 Processing batch of ${tweets.length} tweets...`);
+          
+          for (const tweetUrl of tweets) {
+            attempts++;
+            console.log(`\n🐦 [${attempts}/${maxAttempts}] Processing: ${tweetUrl}`);
+            
+            try {
+              // Check if we should skip this tweet (duplicate detection)
+              const skipCheck = await xHasMyComment(page, tweetUrl);
+              if (skipCheck.skip) {
+                console.log(`⏭️ Skipping tweet (${skipCheck.reason}): ${tweetUrl}`);
+                results.push({ 
+                  url: tweetUrl, 
+                  success: false, 
+                  skipped: true, 
+                  reason: skipCheck.reason 
+                });
+                continue; // Skip to next tweet without counting as success
+              }
+              
+              // Extract post content for AI
+              console.log(`🐦 Extracting content for AI...`);
+              const postContent = await getPostContent(page, tweetUrl, platform);
+              console.log(`📝 Post content: "${postContent.slice(0, 100)}${postContent.length > 100 ? '...' : ''}"`);
+              
+              // Generate comment (AI or manual)
             const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
-            const aiComment = useAI ? await generateAIComment(postContent, sessionAssistantId) : comment;
-            await xComment(page, postUrl, aiComment);
-            results.push({ url: postUrl, success: true, comment: aiComment });
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Delay between comments
+              const finalComment = useAI ? 
+                await generateAIComment(postContent, sessionAssistantId) : 
+                comment;
+              
+              console.log(`💬 Generated comment: "${finalComment.slice(0, 100)}${finalComment.length > 100 ? '...' : ''}"`);
+              
+              // Perform like if requested
+              if (likePost) {
+                console.log(`❤️ Attempting to like tweet...`);
+                try {
+                  // Check if already liked first
+                  await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+                  const alreadyLiked = await isTweetAlreadyLiked(page);
+                  
+                  if (!alreadyLiked) {
+                    await xLike(page, tweetUrl);
+                    console.log(`✅ Tweet liked successfully`);
+                  } else {
+                    console.log(`⏭️ Tweet already liked, skipping like`);
+                  }
+                } catch (likeError) {
+                  console.log(`⚠️ Like failed (continuing with comment): ${likeError.message}`);
+                }
+              }
+              
+              // Post comment
+              console.log(`💬 Posting comment...`);
+              await xComment(page, tweetUrl, finalComment);
+              
+              // Add to cache after successful comment
+              addToXCommentedCache(tweetUrl, 'commented');
+              
+              successes++;
+              console.log(`✅ Comment posted successfully! (${successes}/${targetSuccesses} completed)`);
+              
+              results.push({ 
+                url: tweetUrl, 
+                success: true, 
+                comment: finalComment,
+                liked: likePost 
+              });
+              
+              // Break if we've reached our target
+              if (successes >= targetSuccesses) {
+                console.log(`🎯 Reached target of ${targetSuccesses} successful comments!`);
+                break;
+              }
+              
+              // Delay between successful comments
+              console.log(`⏳ Waiting 2 seconds before next comment...`);
+              await sleep(2000);
+              
           } catch (error) {
-            results.push({ url: postUrl, success: false, error: error.message });
+              console.log(`❌ Error on ${tweetUrl}: ${error.message}`);
+              results.push({ url: tweetUrl, success: false, error: error.message });
+              // Continue to next tweet without long delay
+              await sleep(500);
+            }
           }
         }
-        
-        return { ok: true, message: `Auto-commented on ${results.filter(r => r.success).length} posts`, results };
+
+        console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
+        if (successes < targetSuccesses) {
+          console.log(`⚠️  Did not reach target of ${targetSuccesses} comments. Reached limit of ${maxAttempts} attempts.`);
+        }
+
+        return {
+          ok: true,
+          message: `Commented on ${successes}/${targetSuccesses} tweets`,
+          results,
+          attempts,
+          cacheStats: {
+            ...cacheStats,
+            newEntries: successes
+          }
+        };
       }
 
       if (action === 'like') {

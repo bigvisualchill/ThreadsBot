@@ -722,7 +722,22 @@
                     sessions.forEach(session => {
                         const option = document.createElement('option');
                         option.value = session;
-                        option.textContent = session;
+                        
+                        // Get platform info for this session and add icon
+                        let displayText = session;
+                        try {
+                            const sessionData = localStorage.getItem(`session_${session}`);
+                            if (sessionData) {
+                                const parsed = JSON.parse(sessionData);
+                                const platform = parsed.platform || 'unknown';
+                                const platformEmoji = platform === 'instagram' ? '📷' : platform === 'threads' ? '🧵' : platform === 'x' ? '🐦' : '📱';
+                                displayText = `${platformEmoji} ${session}`;
+                            }
+                        } catch (error) {
+                            // Fallback to just session name
+                        }
+                        
+                        option.textContent = displayText;
                         loginDropdown.appendChild(option);
                     });
                 }
@@ -751,7 +766,7 @@
                                 const parsed = JSON.parse(sessionData);
                                 const platform = parsed.platform || 'unknown';
                                 const platformEmoji = platform === 'instagram' ? '📷' : platform === 'threads' ? '🧵' : platform === 'x' ? '🐦' : '📱';
-                                displayText = `${platformEmoji} ${session} (${platform})`;
+                                displayText = `${platformEmoji} ${session}`;
                             }
                         } catch (error) {
                             // Fallback to just session name
