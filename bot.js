@@ -211,13 +211,22 @@ async function launchBrowser(headful, platform = null) {
   if (headful && platform && platformContexts.has(platform)) {
     try {
       const platformData = platformContexts.get(platform);
-      const { context, page } = platformData;
+      const { context, page, wasHeadful } = platformData;
       
-      // Check if the context and page are still valid
-      if (context && !context._closed && page && !page.isClosed()) {
+      // If we need headful but existing context was headless, create new context
+      if (!wasHeadful && headful) {
+        console.log(`🔄 Need headful mode but existing context for ${platform} was headless, creating new visible context`);
+        try {
+          await context.close();
+        } catch (e) {
+          // Context might already be closed
+        }
+        platformContexts.delete(platform);
+        // Fall through to create new context below
+      } else if (context && !context._closed && page && !page.isClosed()) {
         try {
           await page.evaluate(() => true);
-          console.log(`Reusing existing headful context for ${platform}`);
+          console.log(`Reusing existing ${wasHeadful ? 'headful' : 'headless'} context for ${platform}`);
           
           // Ensure page is brought to front even when reusing context
           if (headful) {
@@ -251,7 +260,7 @@ async function launchBrowser(headful, platform = null) {
             console.log('👁️ Browser window brought to front for new page in existing context');
           }
           
-          platformContexts.set(platform, { context, page: newPage });
+          platformContexts.set(platform, { context, page: newPage, wasHeadful });
           return { browser: globalBrowser, page: newPage };
         }
       } else {
@@ -361,8 +370,12 @@ async function launchBrowser(headful, platform = null) {
         page = await existingContext.context.newPage();
         await setupPage(page, headful);
         
-        // Update the stored page reference
-        platformContexts.set(platform, { context: existingContext.context, page });
+        // Update the stored page reference, preserving headful state
+        platformContexts.set(platform, { 
+          context: existingContext.context, 
+          page, 
+          wasHeadful: existingContext.wasHeadful 
+        });
       } else {
         console.log(`🔒 Creating new isolated context for platform: ${platform}`);
         const context = await browser.createBrowserContext();
@@ -375,9 +388,9 @@ async function launchBrowser(headful, platform = null) {
           console.log('👁️ Browser window brought to front for headful mode');
         }
         
-        // Store platform context
-        platformContexts.set(platform, { context, page });
-        console.log(`✅ Platform context created for ${platform}`);
+        // Store platform context with headful state tracking
+        platformContexts.set(platform, { context, page, wasHeadful: headful });
+        console.log(`✅ Platform context created for ${platform} (${headful ? 'headful' : 'headless'})`);
       }
     } else {
       // Default behavior - create page in default context
