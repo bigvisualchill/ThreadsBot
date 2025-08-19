@@ -3407,37 +3407,56 @@ export async function runAction(options) {
         console.log(`🎯 Target: ${targetSuccesses} successful comments`);
 
         try {
-          // Discover posts
-          console.log('🔍 Discovering Bluesky posts...');
-          const discoveredPosts = await discoverBlueskyPosts(page, searchCriteria, maxPostsToProcess * 2);
-          
-          if (discoveredPosts.length === 0) {
-            return { ok: true, message: 'No Bluesky posts found for the given criteria', results: [] };
-          }
-
-          console.log(`📊 Found ${discoveredPosts.length} posts, processing...`);
           const results = [];
           let successCount = 0;
+          let processedPosts = new Set(); // Track processed posts to avoid duplicates
+          let discoveryAttempts = 0;
+          const maxDiscoveryAttempts = 10; // Prevent infinite loops
 
-          for (const postUrl of discoveredPosts) {
-            if (successCount >= targetSuccesses) break;
+          while (successCount < targetSuccesses && discoveryAttempts < maxDiscoveryAttempts) {
+            discoveryAttempts++;
+            console.log(`🔍 Discovery attempt ${discoveryAttempts}: Looking for posts...`);
+            
+            // Discover more posts (get more than we need to account for skips)
+            const batchSize = Math.max(10, (targetSuccesses - successCount) * 3);
+            const discoveredPosts = await discoverBlueskyPosts(page, searchCriteria, batchSize);
+            
+            if (discoveredPosts.length === 0) {
+              console.log('❌ No more posts found in this discovery attempt');
+              break; // No more posts available
+            }
 
-            try {
-              console.log(`\n🦋 [${successCount + 1}/${targetSuccesses}] Processing: ${postUrl}`);
+            // Filter out posts we've already processed
+            const newPosts = discoveredPosts.filter(url => !processedPosts.has(url));
+            console.log(`📊 Found ${discoveredPosts.length} posts, ${newPosts.length} new posts to process`);
 
-              // Check if we've already commented on this post
-              const alreadyCommented = await blueskyHasMyComment(page, postUrl, username);
-              if (alreadyCommented) {
-                console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
-                results.push({ 
-                  url: postUrl, 
-                  success: false, 
-                  error: 'Already commented',
-                  skipped: true 
-                });
-                continue; // Skip to next post
-              }
-              console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
+            if (newPosts.length === 0) {
+              console.log('⚠️ All discovered posts have already been processed');
+              break; // No new posts to process
+            }
+
+            // Process new posts
+            for (const postUrl of newPosts) {
+              if (successCount >= targetSuccesses) break;
+
+              processedPosts.add(postUrl); // Mark as processed
+
+              try {
+                console.log(`\n🦋 [${successCount + 1}/${targetSuccesses}] Processing: ${postUrl}`);
+
+                // Check if we've already commented on this post
+                const alreadyCommented = await blueskyHasMyComment(page, postUrl, username);
+                if (alreadyCommented) {
+                  console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
+                  results.push({ 
+                    url: postUrl, 
+                    success: false, 
+                    error: 'Already commented',
+                    skipped: true 
+                  });
+                  continue; // Skip to next post
+                }
+                console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
 
               // Generate AI comment if needed
               let finalComment = comment || 'Great post!';
@@ -3475,18 +3494,34 @@ export async function runAction(options) {
                 await sleep(3000);
               }
 
-            } catch (error) {
-              console.log(`❌ Error processing post: ${error.message}`);
-              results.push({ 
-                url: postUrl, 
-                success: false, 
-                error: error.message 
-              });
-              await sleep(1000);
+              } catch (error) {
+                console.log(`❌ Error processing post: ${error.message}`);
+                results.push({ 
+                  url: postUrl, 
+                  success: false, 
+                  error: error.message 
+                });
+                await sleep(1000);
+              }
+            }
+
+            // If we've reached our target, break out of discovery loop
+            if (successCount >= targetSuccesses) {
+              console.log(`🎯 Target reached! ${successCount}/${targetSuccesses} successful comments`);
+              break;
+            }
+
+            // Small delay between discovery attempts
+            if (discoveryAttempts < maxDiscoveryAttempts) {
+              console.log('⏳ Brief pause before next discovery attempt...');
+              await sleep(2000);
             }
           }
 
           const message = `Bluesky auto-comment completed: ${successCount}/${targetSuccesses} successful comments`;
+          if (successCount < targetSuccesses) {
+            console.log(`⚠️ Could not reach target. Processed ${processedPosts.size} total posts, found ${successCount} suitable for commenting.`);
+          }
           return { ok: true, message, results };
 
         } catch (error) {
