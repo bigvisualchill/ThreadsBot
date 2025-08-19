@@ -3250,8 +3250,15 @@ export async function runAction(options) {
                 homeIndicator: !!homeIndicator
               };
               
-              const isLoggedIn = !!(composeButton || userMenu || feedIndicator);
+              // Check localStorage for logged-out indicators
+              const loggedOutIndicators = debugInfo.localStorageKeys.filter(key => 
+                key.includes('logged-out') || key.includes('anonymous')
+              );
+              
+              // More strict login detection - require compose button OR user menu, not just feed
+              const isLoggedIn = !!(composeButton || userMenu) && loggedOutIndicators.length === 0;
               debugInfo.isLoggedIn = isLoggedIn;
+              debugInfo.loggedOutIndicators = loggedOutIndicators;
               
               return debugInfo;
             });
@@ -3259,7 +3266,10 @@ export async function runAction(options) {
             console.log('🔍 Bluesky Login Status Debug:', JSON.stringify(loginStatus, null, 2));
             
             if (!loginStatus.isLoggedIn) {
-              return { ok: false, message: 'Bluesky login required. Session appears to be expired. Please login again using the Login tab.' };
+              const reason = loginStatus.loggedOutIndicators.length > 0 ? 
+                `Detected logged-out state in localStorage: ${loginStatus.loggedOutIndicators.join(', ')}` :
+                'Missing required UI elements (compose button or user menu)';
+              return { ok: false, message: `Bluesky login required. ${reason}. Please login again using the Login tab.` };
             }
             console.log('✅ Already logged into Bluesky from saved session');
           }
