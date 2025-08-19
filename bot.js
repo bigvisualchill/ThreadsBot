@@ -3255,10 +3255,21 @@ export async function runAction(options) {
                 key.includes('logged-out') || key.includes('anonymous')
               );
               
-              // More strict login detection - require compose button OR user menu, not just feed
-              const isLoggedIn = !!(composeButton || userMenu) && loggedOutIndicators.length === 0;
+              // Check for positive login indicators in localStorage
+              const loggedInIndicators = debugInfo.localStorageKeys.filter(key => 
+                key.includes('did:plc:') || key.includes('BSKY_STORAGE') || key.includes('agent-labelers')
+              );
+              
+              // Strong login detection: UI elements OR localStorage indicators override stale logged-out keys
+              const hasUIIndicators = !!(composeButton || userMenu);
+              const hasStorageIndicators = loggedInIndicators.length > 0;
+              const isLoggedIn = hasUIIndicators || hasStorageIndicators;
+              
               debugInfo.isLoggedIn = isLoggedIn;
               debugInfo.loggedOutIndicators = loggedOutIndicators;
+              debugInfo.loggedInIndicators = loggedInIndicators;
+              debugInfo.hasUIIndicators = hasUIIndicators;
+              debugInfo.hasStorageIndicators = hasStorageIndicators;
               
               return debugInfo;
             });
@@ -3266,10 +3277,10 @@ export async function runAction(options) {
             console.log('🔍 Bluesky Login Status Debug:', JSON.stringify(loginStatus, null, 2));
             
             if (!loginStatus.isLoggedIn) {
-              const reason = loginStatus.loggedOutIndicators.length > 0 ? 
-                `Detected logged-out state in localStorage: ${loginStatus.loggedOutIndicators.join(', ')}` :
-                'Missing required UI elements (compose button or user menu)';
-              return { ok: false, message: `Bluesky login required. ${reason}. Please login again using the Login tab.` };
+              const uiStatus = loginStatus.hasUIIndicators ? '✅ UI elements present' : '❌ Missing UI elements';
+              const storageStatus = loginStatus.hasStorageIndicators ? '✅ Auth data present' : '❌ No auth data';
+              const reason = `${uiStatus}, ${storageStatus}`;
+              return { ok: false, message: `Bluesky login required. Status: ${reason}. Please login again using the Login tab.` };
             }
             console.log('✅ Already logged into Bluesky from saved session');
           }
