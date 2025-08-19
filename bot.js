@@ -3628,10 +3628,17 @@ async function blueskyLike(page, postUrl) {
   }
   
   const likeSelectors = [
-    '[aria-label*="Like"][aria-pressed="false"]', // Specifically not liked yet
-    '[aria-label*="Like"]:not([aria-pressed="true"])', // Not already pressed
-    '[data-testid*="like"]:not([aria-pressed="true"])',
-    'button[aria-label*="like" i]'
+    // Target the actual heart button, not counters or text
+    'button[aria-label="Like"][role="button"]',
+    'button[aria-label="Like"]:not([aria-pressed="true"])',
+    '[data-testid="likeBtn"]:not([aria-pressed="true"])',
+    '[data-testid="like"]:not([aria-pressed="true"])',
+    // Heart icon specific selectors
+    'button[aria-label^="Like"]:not([aria-label*="likes"]):not([aria-label*="liked by"])',
+    'button svg[data-icon="heart"]',
+    'button:has(svg[data-icon="heart"])',
+    // Fallback with role specification
+    '[role="button"][aria-label*="Like"]:not([aria-label*="likes"]):not([aria-label*="liked by"])'
   ];
   
   for (const selector of likeSelectors) {
@@ -3640,12 +3647,37 @@ async function blueskyLike(page, postUrl) {
       await page.waitForSelector(selector, { timeout: 2000 });
       const element = await page.$(selector);
       if (element) {
-        // Get the element's state before clicking
-        const beforeState = await element.evaluate(el => ({
+        // Validate this is actually a like button, not a counter or text
+        const elementInfo = await element.evaluate(el => ({
           ariaPressed: el.getAttribute('aria-pressed'),
           ariaLabel: el.getAttribute('aria-label'),
-          className: el.className
+          className: el.className,
+          tagName: el.tagName,
+          role: el.getAttribute('role'),
+          textContent: el.textContent?.trim(),
+          hasHeartIcon: !!el.querySelector('svg[data-icon="heart"], [data-icon="heart"]'),
+          isButton: el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'
         }));
+        
+        console.log(`🔍 Element validation:`, elementInfo);
+        
+        // Skip if this looks like a counter (contains numbers) or text display
+        if (elementInfo.textContent && /\d+.*like/i.test(elementInfo.textContent)) {
+          console.log('⚠️ Skipping element - appears to be like counter, not button');
+          continue;
+        }
+        
+        // Skip if not actually a clickable button
+        if (!elementInfo.isButton) {
+          console.log('⚠️ Skipping element - not a button or clickable element');
+          continue;
+        }
+        
+        const beforeState = {
+          ariaPressed: elementInfo.ariaPressed,
+          ariaLabel: elementInfo.ariaLabel,
+          className: elementInfo.className
+        };
         
         await element.click();
         await sleep(1000); // Wait for state change
