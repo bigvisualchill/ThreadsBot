@@ -3425,6 +3425,20 @@ export async function runAction(options) {
             try {
               console.log(`\n🦋 [${successCount + 1}/${targetSuccesses}] Processing: ${postUrl}`);
 
+              // Check if we've already commented on this post
+              const alreadyCommented = await blueskyHasMyComment(page, postUrl, username);
+              if (alreadyCommented) {
+                console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
+                results.push({ 
+                  url: postUrl, 
+                  success: false, 
+                  error: 'Already commented',
+                  skipped: true 
+                });
+                continue; // Skip to next post
+              }
+              console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
+
               // Generate AI comment if needed
               let finalComment = comment || 'Great post!';
               if (useAI) {
@@ -4117,6 +4131,69 @@ async function blueskyComment(page, postUrl, comment) {
   } catch (error) {
     console.error('❌ Bluesky comment error:', error.message);
     throw new Error(`Bluesky comment error: ${error.message}`);
+  }
+}
+
+async function blueskyHasMyComment(page, postUrl, username) {
+  console.log(`🔍 Checking if ${username} already commented on: ${postUrl}`);
+  
+  try {
+    // Navigate to the post
+    await page.goto(postUrl, { waitUntil: 'networkidle2' });
+    await sleep(2000); // Wait for comments to load
+    
+    // Look for existing comments from this user
+    const hasComment = await page.evaluate((username) => {
+      // Multiple selectors to find comments
+      const commentSelectors = [
+        '[data-testid*="post"]',
+        '[role="article"]',
+        '.post',
+        '.comment',
+        '[data-testid*="reply"]'
+      ];
+      
+      let foundMyComment = false;
+      
+      commentSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+          const elementText = element.innerText || element.textContent || '';
+          
+          // Look for username patterns in the comment
+          if (elementText.includes(`@${username}`) || 
+              elementText.includes(username) ||
+              element.querySelector(`[href*="${username}"]`)) {
+            
+            // Additional check: make sure this looks like a comment, not just a mention
+            const hasCommentIndicators = element.querySelector('[aria-label*="reply"]') ||
+                                        element.querySelector('[data-testid*="reply"]') ||
+                                        element.querySelector('[aria-label*="comment"]') ||
+                                        elementText.length > 10; // Substantial text
+            
+            if (hasCommentIndicators) {
+              console.log(`🔍 Found potential comment from ${username}:`, elementText.slice(0, 100));
+              foundMyComment = true;
+            }
+          }
+        });
+      });
+      
+      return foundMyComment;
+    }, username);
+    
+    if (hasComment) {
+      console.log(`✅ Found existing comment from ${username}`);
+      return true;
+    } else {
+      console.log(`❌ No existing comment found from ${username}`);
+      return false;
+    }
+    
+  } catch (error) {
+    console.log(`⚠️ Error checking for existing comment: ${error.message}`);
+    // If we can't check, assume no comment to be safe
+    return false;
   }
 }
 
