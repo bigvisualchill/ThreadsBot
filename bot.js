@@ -1150,37 +1150,69 @@ async function getPostContent(page, postUrl, platform) {
     let blueskyText = await page.evaluate(() => {
       console.log('🔍 Starting Bluesky content extraction...');
       
-      // Try specific selectors first (most reliable)
+      // Function to check if text is likely post content (not UI elements, hashtags, etc.)
+      function isLikelyPostContent(text) {
+        if (!text || text.length < 20) return false; // Require substantial content
+        
+        // Skip UI elements
+        if (['Like', 'Reply', 'Repost', 'Share', 'Follow', 'Following'].some(ui => text.includes(ui))) return false;
+        
+        // Skip pure hashtags or short phrases
+        if (text.match(/^#\w+$/)) return false; // Pure hashtag
+        if (text.match(/^\d+\s*(like|reply|repost)/i)) return false; // Counter text
+        
+        // Must contain actual sentences (spaces and multiple words)
+        if (!text.includes(' ') || text.split(' ').length < 3) return false;
+        
+        return true;
+      }
+      
+      // Try specific post content selectors first
       const specificSelectors = [
         '[data-testid="post-text"]',
         '[data-testid="postText"]',
         'div[data-testid*="post"] p',
-        'div[data-testid*="post"] span',
+        'div[data-testid*="post"] div[dir]', // Bluesky often uses dir attribute for text
         '[role="article"] p',
-        '[role="article"] span'
+        '[role="article"] div[dir]'
       ];
       
+      console.log(`🔍 Trying ${specificSelectors.length} specific selectors...`);
       for (const selector of specificSelectors) {
         const elements = document.querySelectorAll(selector);
+        console.log(`   Selector "${selector}": found ${elements.length} elements`);
+        
         for (const element of elements) {
           const text = element.textContent?.trim();
-          if (text && text.length > 10) {
-            console.log(`✅ Found content with selector: ${selector}`);
+          console.log(`   Checking text: "${text?.slice(0, 50)}..."`);
+          
+          if (isLikelyPostContent(text)) {
+            console.log(`✅ Found quality content with selector: ${selector}`);
             return text;
           }
         }
       }
       
-      // Fallback: look for any substantial text content in post containers
+      // Enhanced fallback: look for the main post content more intelligently
+      console.log('🔍 Trying enhanced fallback method...');
       const postContainers = document.querySelectorAll('div[data-testid*="post"], [role="article"]');
+      console.log(`   Found ${postContainers.length} post containers`);
+      
       for (const container of postContainers) {
-        const textElements = container.querySelectorAll('p, span, div');
+        // Look for the largest text block that looks like post content
+        const textElements = container.querySelectorAll('p, div, span');
+        let bestCandidate = '';
+        
         for (const element of textElements) {
           const text = element.textContent?.trim();
-          if (text && text.length > 15 && !text.includes('Like') && !text.includes('Reply') && !text.includes('Repost')) {
-            console.log(`✅ Found content via fallback method`);
-            return text;
+          if (text && text.length > bestCandidate.length && isLikelyPostContent(text)) {
+            bestCandidate = text;
           }
+        }
+        
+        if (bestCandidate) {
+          console.log(`✅ Found content via enhanced fallback: "${bestCandidate.slice(0, 50)}..."`);
+          return bestCandidate;
         }
       }
       
