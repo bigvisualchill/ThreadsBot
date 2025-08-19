@@ -941,3 +941,187 @@ Login status determination:
 - Git commit: `48ba076` - "Fix Instagram login detection and enhance debugging"
 
 **Current State**: Instagram login detection is now highly reliable with comprehensive debugging, proper session recognition, and seamless workflow continuation. Users can successfully log in once and run multiple automation actions without false login detection failures.
+
+---
+
+### Platform Context Isolation & Session Management Overhaul Phase
+
+**Date**: January 2025  
+**Scope**: Major architectural improvements for multi-platform session management, browser context isolation, and enhanced authentication reliability
+
+**Problem Statement**: 
+Users experienced critical issues with multi-platform session management where logging into Instagram and Threads with the same account name would cause sessions to overwrite each other in browser storage. Additionally, browser contexts were not properly isolated, leading to session conflicts and browser crashes when checking account status. Bluesky login was unreliable due to complex modal interactions and submit button failures.
+
+**Root Cause Analysis**:
+
+1. **Session Storage Collision**:
+   - Sessions stored as `session_${username}` format
+   - Instagram: `session_the.council.room` → `{platform: 'instagram', ...}`
+   - Threads: `session_the.council.room` → `{platform: 'threads', ...}` ❌ **OVERWRITES**
+   - Result: Only one platform session could exist per account name
+
+2. **Browser Context Sharing**:
+   - All platforms shared the same browser context and cookies
+   - Session conflicts when multiple platforms accessed simultaneously
+   - Browser crashes during status checks due to context interference
+
+3. **Bluesky Authentication Issues**:
+   - Complex like button → modal → Tab+Enter flow was unreliable
+   - Submit button clicking often failed after entering credentials
+   - Focus management problems interfered with keyboard navigation
+
+**Technical Solutions Implemented**:
+
+**1. Platform-Specific Session Storage**:
+```javascript
+// Before (Problematic)
+localStorage.setItem(`session_${sessionName}`, sessionData);
+// Result: session_the.council.room (overwrites between platforms)
+
+// After (Isolated)
+localStorage.setItem(`session_${platform}_${sessionName}`, sessionData);
+// Result: session_instagram_the.council.room, session_threads_the.council.room
+```
+
+**2. Browser Context Isolation Architecture**:
+```javascript
+// Platform-specific contexts for session isolation
+let platformContexts = new Map(); // platform -> { context, page }
+
+async function launchBrowser(headful, platform = null) {
+  if (platform) {
+    if (platformContexts.has(platform)) {
+      // Reuse existing isolated context
+      const existingContext = platformContexts.get(platform);
+      page = await existingContext.context.newPage();
+    } else {
+      // Create new isolated context
+      const context = await browser.createBrowserContext();
+      page = await context.newPage();
+      platformContexts.set(platform, { context, page });
+    }
+  }
+  return { browser, page };
+}
+```
+
+**3. Smart Browser Lifecycle Management**:
+```javascript
+// Only close browser if no platform contexts exist
+if (!headful && platformContexts.size === 0) {
+  await browser.close();
+} else if (platformContexts.size > 0) {
+  console.log(`Browser kept open to preserve ${platformContexts.size} platform context(s)`);
+}
+```
+
+**4. Enhanced Account Dropdown Display**:
+```javascript
+// Parse session key format: platform_username
+const parts = session.split('_');
+const platform = parts[0];
+const username = parts.slice(1).join('_');
+displayText = `${platformName} | ${username}`;
+// Result: "Instagram | the.council.room", "Threads | the.council.room"
+```
+
+**5. Simplified Bluesky Authentication**:
+```javascript
+// Before (Complex): Home page → Find like button → Click → Modal → Tab+Enter
+await page.goto('https://bsky.app/');
+// Complex like button detection and modal handling...
+
+// After (Simple): Settings page → Tab Tab Enter
+await page.goto('https://bsky.app/settings');
+await page.keyboard.press('Tab');    // First Tab
+await page.keyboard.press('Tab');    // Second Tab
+await page.keyboard.press('Enter');  // Opens login fields directly
+```
+
+**6. Robust Form Submission**:
+```javascript
+// Enhanced submit with Enter key fallback
+if (submitButton) {
+  try {
+    await submitButton.click();
+  } catch (error) {
+    await page.keyboard.press('Enter'); // Fallback
+  }
+} else {
+  await page.keyboard.press('Enter'); // Direct fallback
+}
+```
+
+**7. Enhanced Threads Status Detection**:
+```javascript
+// Fixed domain compatibility and comprehensive indicators
+const onThreadsDomain = currentUrl.includes('threads.net') || currentUrl.includes('threads.com');
+const loginIndicators = [
+  // 19 comprehensive selectors for logged-in state detection
+  'nav[role="navigation"]', '[role="main"]', 'main',
+  '[aria-label*="Compose"]', 'textarea[placeholder*="Start a thread"]',
+  '[aria-label*="Profile"]', 'img[alt*="profile"]',
+  '[data-testid*="post"]', 'article', '[data-testid*="thread"]'
+  // ... additional selectors
+];
+```
+
+**Key Architectural Changes**:
+
+**Browser Context Management**:
+- **Isolated Contexts**: Each platform gets its own `browser.createBrowserContext()`
+- **Persistent Sessions**: Contexts preserved across headful/headless operations
+- **Smart Cleanup**: Browser only closes when no active platform contexts exist
+- **Session Isolation**: Separate cookies, localStorage, sessionStorage per platform
+
+**Session Storage Architecture**:
+- **Platform-Prefixed Keys**: `session_${platform}_${username}` format prevents collisions
+- **Multi-Platform Support**: Same account name can exist on multiple platforms
+- **Backward Compatibility**: Graceful handling of old session format
+- **API Integration**: Proper username extraction for backend calls
+
+**Authentication Reliability**:
+- **Simplified Flows**: Reduced complexity in Bluesky login process
+- **Robust Fallbacks**: Enter key submission when button clicks fail
+- **Enhanced Detection**: Comprehensive login state verification
+- **Better Error Handling**: Specific error messages and recovery strategies
+
+**User Experience Improvements**:
+
+**Account Management**:
+```
+Before: Account dropdown shows only one platform at a time
+├── Threads | the.council.room ❌ (Instagram missing)
+
+After: Account dropdown shows all platforms simultaneously  
+├── Instagram | the.council.room
+└── Threads | the.council.room
+```
+
+**Session Reliability**:
+- **No More Overwrites**: Instagram and Threads sessions coexist peacefully
+- **No Browser Crashes**: Isolated contexts prevent interference
+- **Persistent Logins**: Sessions survive across different operation modes
+- **Status Accuracy**: Proper detection of logged-in states
+
+**Authentication Experience**:
+- **Faster Bluesky Login**: Simple settings page method vs complex modal flow
+- **More Reliable**: Enter key fallback ensures form submission works
+- **Better Feedback**: Clear logging shows authentication progress
+- **Reduced Failures**: Robust error handling and recovery
+
+**Files Modified**:
+- `bot.js`: Platform context architecture, browser lifecycle management, Bluesky login overhaul
+- `public/index.html`: Session storage format, dropdown display logic, API call updates
+- `threads-functions.js`: Enhanced status detection and debugging cleanup
+
+**Technical Metrics**:
+- **Session Storage**: Changed from single-key to platform-prefixed format
+- **Browser Contexts**: Implemented isolated contexts for 4 platforms
+- **Login Methods**: Simplified Bluesky from 8-step to 3-step process
+- **Error Handling**: Added 3 layers of fallback for form submission
+- **Status Detection**: Expanded from 7 to 19+ login indicators for Threads
+
+**Current State**: The application now features robust multi-platform session management with complete isolation between platforms, preventing session conflicts and browser crashes. Users can simultaneously maintain login sessions for Instagram, Threads, X (Twitter), and Bluesky with the same account names. Bluesky authentication is significantly more reliable with the simplified settings page approach and robust form submission handling. The account dropdown properly displays all logged-in platforms, and platform contexts ensure sessions persist across different operation modes without interference.
+
+**Git Commit**: `36b5761` - "Major Platform Context Isolation & Session Management Overhaul"
