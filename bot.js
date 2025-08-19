@@ -2503,6 +2503,12 @@ export async function runAction(options) {
     console.log(`Navigating to: ${homeUrl}`);
     await page.goto(homeUrl, { waitUntil: 'networkidle2' });
     
+    // Reload session after navigation to ensure localStorage can be set properly
+    if (sessionLoaded) {
+      console.log('🔄 Reloading session after page navigation to ensure localStorage works...');
+      await loadSession(page, platform, sessionName);
+    }
+    
     // Debug: Check what cookies are actually set after loading
     const currentCookies = await page.cookies();
     console.log(`Cookies currently set: ${currentCookies.length}`);
