@@ -341,6 +341,12 @@ async function launchBrowser(headful, platform = null) {
         page = await context.newPage();
         await setupPage(page, headful);
         
+        // For headful mode, bring the new page to front
+        if (headful) {
+          await page.bringToFront();
+          console.log('👁️ Browser window brought to front for headful mode');
+        }
+        
         // Store platform context
         platformContexts.set(platform, { context, page });
         console.log(`✅ Platform context created for ${platform}`);
@@ -3588,23 +3594,69 @@ async function blueskyLike(page, postUrl) {
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
   await sleep(1000);
   
-  const likeSelectors = ['[aria-label*="Like"]', '[data-testid*="like"]', 'button[aria-label*="like"]'];
+  // Check if already liked before attempting
+  const alreadyLiked = await page.evaluate(() => {
+    // Look for indicators that the post is already liked
+    const likedIndicators = document.querySelectorAll('[aria-label*="Unlike"], [aria-pressed="true"], .liked, [data-state="liked"]');
+    return likedIndicators.length > 0;
+  });
+  
+  if (alreadyLiked) {
+    console.log('ℹ️ Post is already liked, skipping...');
+    return { success: true, alreadyLiked: true };
+  }
+  
+  const likeSelectors = [
+    '[aria-label*="Like"][aria-pressed="false"]', // Specifically not liked yet
+    '[aria-label*="Like"]:not([aria-pressed="true"])', // Not already pressed
+    '[data-testid*="like"]:not([aria-pressed="true"])',
+    'button[aria-label*="like" i]'
+  ];
   
   for (const selector of likeSelectors) {
     try {
+      console.log(`🔍 Trying like selector: ${selector}`);
       await page.waitForSelector(selector, { timeout: 2000 });
       const element = await page.$(selector);
       if (element) {
+        // Get the element's state before clicking
+        const beforeState = await element.evaluate(el => ({
+          ariaPressed: el.getAttribute('aria-pressed'),
+          ariaLabel: el.getAttribute('aria-label'),
+          className: el.className
+        }));
+        
         await element.click();
-        console.log('✅ Bluesky post liked successfully!');
-        return { success: true };
+        await sleep(1000); // Wait for state change
+        
+        // Verify the like actually worked by checking state change
+        const afterState = await element.evaluate(el => ({
+          ariaPressed: el.getAttribute('aria-pressed'),
+          ariaLabel: el.getAttribute('aria-label'),
+          className: el.className
+        }));
+        
+        console.log('🔍 Like button state change:', { before: beforeState, after: afterState });
+        
+        // Check if the state indicates success
+        const likeSuccessful = afterState.ariaPressed === 'true' || 
+                              afterState.ariaLabel?.includes('Unlike') ||
+                              afterState.className?.includes('liked');
+        
+        if (likeSuccessful) {
+          console.log('✅ Bluesky post liked successfully - verified by state change!');
+          return { success: true };
+        } else {
+          console.log('⚠️ Like button clicked but no state change detected');
+        }
       }
     } catch (error) {
+      console.log(`⚠️ Like selector failed: ${selector} - ${error.message}`);
       continue;
     }
   }
   
-  throw new Error('Could not find like button on Bluesky post');
+  throw new Error('Could not find or successfully click like button on Bluesky post');
 }
 
 async function blueskyComment(page, postUrl, comment) {
@@ -3763,9 +3815,41 @@ async function blueskyComment(page, postUrl, comment) {
       await submitButton.click();
     }
     
-    await sleep(2000);
-    console.log('✅ Bluesky comment posted successfully!');
-    return { success: true };
+    await sleep(3000); // Give more time for comment to appear
+    
+    // Verify the comment was actually posted by looking for it on the page
+    console.log('🔍 Verifying comment was posted...');
+    const commentVerification = await page.evaluate((commentText) => {
+      // Look for the comment text in the page
+      const allText = document.body.innerText.toLowerCase();
+      const commentLower = commentText.toLowerCase();
+      
+      // Also look for comment elements that might contain our text
+      const commentElements = document.querySelectorAll('[data-testid*="post"], article, [role="article"], .comment, [data-testid*="reply"]');
+      let foundInElement = false;
+      
+      commentElements.forEach(el => {
+        if (el.innerText && el.innerText.toLowerCase().includes(commentLower)) {
+          foundInElement = true;
+        }
+      });
+      
+      return {
+        foundInPageText: allText.includes(commentLower),
+        foundInElements: foundInElement,
+        totalCommentElements: commentElements.length
+      };
+    }, comment);
+    
+    console.log('🔍 Comment verification result:', commentVerification);
+    
+    if (commentVerification.foundInPageText || commentVerification.foundInElements) {
+      console.log('✅ Bluesky comment posted successfully - verified on page!');
+      return { success: true, verified: true };
+    } else {
+      console.log('⚠️ Comment submission completed but verification failed - comment may not have posted');
+      return { success: false, verified: false, message: 'Comment not found on page after submission' };
+    }
     
   } catch (error) {
     console.error('❌ Bluesky comment error:', error.message);
