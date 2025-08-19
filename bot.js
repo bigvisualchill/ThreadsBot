@@ -3209,6 +3209,13 @@ export async function runAction(options) {
           return { ok: false, message: 'Search criteria (hashtag or keywords) required for auto-comment' };
         }
 
+        // Ensure we're logged in before starting auto-comment
+        try {
+          await ensureBlueskyLoggedIn(page, { username, password });
+        } catch (error) {
+          return { ok: false, message: `Bluesky login failed: ${error.message}` };
+        }
+
         const maxPostsToProcess = parseInt(maxPosts) || 3;
         const targetSuccesses = maxPostsToProcess;
         console.log(`🎯 Target: ${targetSuccesses} successful comments`);
@@ -3237,7 +3244,7 @@ export async function runAction(options) {
               if (useAI) {
                 console.log('🤖 Generating AI comment...');
                 const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
-                const postContent = await getPostContent(platform, postUrl, page);
+                const postContent = await getPostContent(page, postUrl, platform);
                 finalComment = await generateAIComment(postContent, sessionAssistantId);
               }
 
