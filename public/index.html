@@ -1138,22 +1138,34 @@
                         const option = document.createElement('option');
                         option.value = session;
                         
-                        // Get platform info for this session and format as "Platform | Account name"
+                        // Parse session key (format: platform_username)
                         let displayText = session;
                         try {
                             const sessionData = localStorage.getItem(`session_${session}`);
                             if (sessionData) {
                                 const parsed = JSON.parse(sessionData);
                                 const platform = parsed.platform || 'unknown';
+                                const username = parsed.username || session.split('_').slice(1).join('_');
                                 const platformName = platform === 'instagram' ? 'Instagram' : 
                                                    platform === 'threads' ? 'Threads' : 
                                                    platform === 'x' ? 'X (Twitter)' : 
                                                    platform === 'bluesky' ? 'Bluesky' : 
                                                    platform.charAt(0).toUpperCase() + platform.slice(1);
-                                displayText = `${platformName} | ${session}`;
+                                displayText = `${platformName} | ${username}`;
                             }
                         } catch (error) {
-                            // Fallback to just session name
+                            // Fallback: try to parse from session key
+                            const parts = session.split('_');
+                            if (parts.length >= 2) {
+                                const platform = parts[0];
+                                const username = parts.slice(1).join('_');
+                                const platformName = platform === 'instagram' ? 'Instagram' : 
+                                                   platform === 'threads' ? 'Threads' : 
+                                                   platform === 'x' ? 'X (Twitter)' : 
+                                                   platform === 'bluesky' ? 'Bluesky' : 
+                                                   platform.charAt(0).toUpperCase() + platform.slice(1);
+                                displayText = `${platformName} | ${username}`;
+                            }
                         }
                         
                         option.textContent = displayText;
@@ -1177,22 +1189,34 @@
                         const option = document.createElement('option');
                         option.value = session;
                         
-                        // Get platform info for this session and format as "Platform | Account name"
+                        // Parse session key (format: platform_username)
                         let displayText = session;
                         try {
                             const sessionData = localStorage.getItem(`session_${session}`);
                             if (sessionData) {
                                 const parsed = JSON.parse(sessionData);
                                 const platform = parsed.platform || 'unknown';
+                                const username = parsed.username || session.split('_').slice(1).join('_');
                                 const platformName = platform === 'instagram' ? 'Instagram' : 
                                                    platform === 'threads' ? 'Threads' : 
                                                    platform === 'x' ? 'X (Twitter)' : 
                                                    platform === 'bluesky' ? 'Bluesky' : 
                                                    platform.charAt(0).toUpperCase() + platform.slice(1);
-                                displayText = `${platformName} | ${session}`;
+                                displayText = `${platformName} | ${username}`;
                             }
                         } catch (error) {
-                            // Fallback to just session name
+                            // Fallback: try to parse from session key
+                            const parts = session.split('_');
+                            if (parts.length >= 2) {
+                                const platform = parts[0];
+                                const username = parts.slice(1).join('_');
+                                const platformName = platform === 'instagram' ? 'Instagram' : 
+                                                   platform === 'threads' ? 'Threads' : 
+                                                   platform === 'x' ? 'X (Twitter)' : 
+                                                   platform === 'bluesky' ? 'Bluesky' : 
+                                                   platform.charAt(0).toUpperCase() + platform.slice(1);
+                                displayText = `${platformName} | ${username}`;
+                            }
                         }
                         
                         option.textContent = displayText;
@@ -1213,7 +1237,9 @@
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith('session_')) {
-                    sessions.push(key.replace('session_', ''));
+                    // Extract the full session key (platform_username)
+                    const sessionKey = key.replace('session_', '');
+                    sessions.push(sessionKey);
                 }
             }
             return sessions;
@@ -1288,7 +1314,7 @@
                 keysToRemove.forEach(key => localStorage.removeItem(key));
                 
                 // Update UI
-                updateSessionDropdowns();
+                updateSessionDropdown();
                 updateSearchFields();
                 updateSessionStatus('All account sessions cleared from browser storage', 'success');
                 console.log(`Cleared ${keysToRemove.length} session entries from localStorage`);
@@ -1692,7 +1718,7 @@
                     body: JSON.stringify({
                         action: 'check-session',
                         platform: platform,
-                        sessionName: activeSession
+                        sessionName: activeSession.split('_').slice(1).join('_') // Extract username from platform_username
                     })
                 });
                 
@@ -1746,14 +1772,14 @@
                 if (result.ok) {
                     updateSessionStatus(`✅ Successfully logged in as ${sessionName}`, 'success');
                     // Save session to localStorage for dropdown (include assistantId)
-                    localStorage.setItem(`session_${sessionName}`, JSON.stringify({ platform, username, assistantId }));
+                    localStorage.setItem(`session_${platform}_${sessionName}`, JSON.stringify({ platform, username, assistantId }));
                     updateSessionDropdown();
                     updateSearchFields();
                     
                     // Auto-select this session in the auto comment dropdown
                     const autoDropdown = document.getElementById('autoActiveSession');
                     if (autoDropdown) {
-                        autoDropdown.value = sessionName;
+                        autoDropdown.value = `${platform}_${sessionName}`;
                         updateSearchFields(); // Update fields for the newly selected account
                     }
                 } else {
@@ -1792,7 +1818,7 @@
                     body: JSON.stringify({
                         action: 'logout',
                         platform: platform,
-                        sessionName: activeSession
+                        sessionName: activeSession.split('_').slice(1).join('_') // Extract username from platform_username
                     })
                 });
                 
@@ -1892,7 +1918,7 @@
                 const payload = {
                     action,
                     platform,
-                    sessionName: activeSession,
+                    sessionName: activeSession.split('_').slice(1).join('_'), // Extract username from platform_username
                     username: username, // Add username from session
                     searchCriteria,
                     maxPosts,

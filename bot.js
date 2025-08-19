@@ -100,6 +100,9 @@ if (process.env.OPENAI_API_KEY) {
 let globalBrowser = null;
 let globalPage = null;
 
+// Platform-specific browser contexts for session isolation
+let platformContexts = new Map(); // platform -> { context, page }
+
 // Instagram tracking variables moved to instagram-functions.js
 
 function getSessionFilePath(platform, sessionName) {
@@ -201,17 +204,48 @@ async function loadSession(page, platform, sessionName = 'default') {
   }
 }
 
-async function launchBrowser(headful) {
-  console.log(`Launching browser with headful: ${headful}`);
+async function launchBrowser(headful, platform = null) {
+  console.log(`Launching browser with headful: ${headful}${platform ? ` for platform: ${platform}` : ''}`);
   
-  // For headful mode, try to reuse existing browser instance
-  if (headful && globalBrowser && globalPage) {
+  // For headful mode with platform isolation, check for existing platform context
+  if (headful && platform && platformContexts.has(platform)) {
+    try {
+      const platformData = platformContexts.get(platform);
+      const { context, page } = platformData;
+      
+      // Check if the context and page are still valid
+      if (context && !context._closed && page && !page.isClosed()) {
+        try {
+          await page.evaluate(() => true);
+          console.log(`Reusing existing headful context for ${platform}`);
+          return { browser: globalBrowser, page };
+        } catch (pageError) {
+          console.log(`Existing page for ${platform} is invalid, creating new page in existing context`);
+          const newPage = await context.newPage();
+          await setupPage(newPage, headful);
+          platformContexts.set(platform, { context, page: newPage });
+          return { browser: globalBrowser, page: newPage };
+        }
+      } else {
+        console.log(`Existing context for ${platform} is invalid, will create new one`);
+        platformContexts.delete(platform);
+      }
+    } catch (error) {
+      console.log(`Error checking existing context for ${platform}:`, error.message);
+      platformContexts.delete(platform);
+    }
+  }
+  
+  // For headful mode without platform, try to reuse global browser instance
+  // Try to reuse existing browser for both headful and headless operations
+  if (globalBrowser) {
     try {
       // Check if the existing browser is still connected
       if (globalBrowser.isConnected()) {
-        console.log('Reusing existing headful browser instance');
+        console.log('✅ Reusing existing browser instance');
         
-        // Check if the page is still valid
+        // For headful mode without platform, try to reuse existing page
+        if (headful && !platform && globalPage) {
         try {
           await globalPage.evaluate(() => true);
           console.log('Existing page is still valid, reusing it');
@@ -222,15 +256,21 @@ async function launchBrowser(headful) {
           await setupPage(globalPage, headful);
           return { browser: globalBrowser, page: globalPage };
         }
+        }
+        
+        // For platform-specific or headless operations, use existing browser but create new page
+        browser = globalBrowser;
       } else {
         console.log('Existing browser is disconnected, creating new browser');
         globalBrowser = null;
         globalPage = null;
+        platformContexts.clear();
       }
     } catch (error) {
       console.log('Error checking existing browser, creating new one:', error.message);
       globalBrowser = null;
       globalPage = null;
+      platformContexts.clear();
     }
   }
   
@@ -240,7 +280,10 @@ async function launchBrowser(headful) {
     console.log('   headless will be set to:', headful ? false : true);
     console.log('   (headful=true means headless=false, so browser should be visible)');
     
-    const browser = await puppeteer.launch({
+    // Create or reuse browser
+    let browser = globalBrowser;
+    if (!browser || !browser.isConnected()) {
+      browser = await puppeteer.launch({
       headless: headful ? false : true,
       args: [
         '--no-sandbox',
@@ -257,25 +300,61 @@ async function launchBrowser(headful) {
       ignoreDefaultArgs: ['--disable-extensions'],
     });
     
-    console.log('✅ Browser launched successfully');
-    console.log('   Browser process PID:', browser.process()?.pid || 'N/A');
-    console.log('   Browser connected:', browser.isConnected());
+      console.log('✅ Browser launched successfully');
+      console.log('   Browser process PID:', browser.process()?.pid || 'N/A');
+      console.log('   Browser connected:', browser.isConnected());
     
-    const page = await browser.newPage();
-    console.log('✅ New page created successfully');
-    await setupPage(page, headful);
-    
-    // Store global references for headful mode
+      // Store global browser reference
     if (headful) {
       globalBrowser = browser;
-      globalPage = page;
       
-      // Add disconnection handler to clean up global references
+        // Add disconnection handler to clean up references
       browser.on('disconnected', () => {
         console.log('Browser disconnected, cleaning up global references');
         globalBrowser = null;
         globalPage = null;
-      });
+          platformContexts.clear();
+        });
+      }
+    } else {
+      console.log('✅ Reusing existing browser instance');
+    }
+    
+    let page;
+    
+    // Platform-specific context isolation (works for both headful and headless)
+    if (platform) {
+      // Check if we already have a context for this platform
+      if (platformContexts.has(platform)) {
+        console.log(`🔄 Reusing existing context for platform: ${platform}`);
+        const existingContext = platformContexts.get(platform);
+        
+        // Create new page in existing context
+        page = await existingContext.context.newPage();
+        await setupPage(page, headful);
+        
+        // Update the stored page reference
+        platformContexts.set(platform, { context: existingContext.context, page });
+      } else {
+        console.log(`🔒 Creating new isolated context for platform: ${platform}`);
+        const context = await browser.createBrowserContext();
+        page = await context.newPage();
+        await setupPage(page, headful);
+        
+        // Store platform context
+        platformContexts.set(platform, { context, page });
+        console.log(`✅ Platform context created for ${platform}`);
+      }
+    } else {
+      // Default behavior - create page in default context
+      page = await browser.newPage();
+      console.log('✅ New page created successfully');
+      await setupPage(page, headful);
+      
+      // Store global page reference for non-platform usage
+      if (headful) {
+        globalPage = page;
+      }
     }
     
     console.log(`Browser launched successfully with headful: ${headful}`);
@@ -2079,42 +2158,100 @@ async function checkSessionStatus(page, platform, sessionName = 'default') {
       return { loggedIn: isLoggedIn };
     } else if (platform === 'threads') {
       await page.goto('https://www.threads.net/', { waitUntil: 'networkidle2' });
-      const isLoggedIn = await page.evaluate(() => {
-        // Check for various indicators that we're logged into Threads
-        const indicators = [
-          '[data-testid="threads-nav-bar"]',
-          '[data-testid="nav-bar"]',
+      const loginCheckResult = await page.evaluate(() => {
+        const debugLog = [];
+        const currentUrl = window.location.href;
+        debugLog.push(`Threads status check on URL: ${currentUrl}`);
+        
+        // Check for logged-in indicators (more comprehensive)
+        const loginIndicators = [
+          // Navigation elements
           'nav[role="navigation"]',
-          '[data-testid="home-tab"]',
-          '[data-testid="search-tab"]',
-          '[data-testid="activity-tab"]',
-          '[data-testid="profile-tab"]'
+          '[role="main"]',
+          'main',
+          // Compose/posting elements
+          '[aria-label*="Compose"]',
+          '[aria-label*="Write"]',
+          '[aria-label*="Create"]',
+          'button[aria-label*="Compose"]',
+          'textarea[placeholder*="Start a thread"]',
+          'textarea[placeholder*="What\'s new"]',
+          // User/profile elements
+          '[aria-label*="Profile"]',
+          '[data-testid*="user"]',
+          'img[alt*="profile"]',
+          // Feed/content elements
+          '[data-testid*="post"]',
+          '[data-testid*="thread"]',
+          'article',
+          // Home/timeline indicators
+          '[aria-label*="Home"]',
+          '[aria-label*="Timeline"]',
+          '[aria-label*="Feed"]'
         ];
         
-        for (const selector of indicators) {
-          if (document.querySelector(selector)) {
-            return true;
+        const foundIndicators = [];
+        for (const selector of loginIndicators) {
+          const element = document.querySelector(selector);
+          if (element) {
+            foundIndicators.push(selector);
           }
         }
+        debugLog.push(`Found login indicators: ${foundIndicators.join(', ')}`);
         
-        // Also check if we're not on a login page
-        const loginIndicators = [
+        // Check for login form elements (indicates NOT logged in)
+        const loginFormElements = [
           'input[name="username"]',
           'input[name="password"]',
+          'input[placeholder*="Username"]',
+          'input[placeholder*="Phone number"]',
           'button[type="submit"]',
-          '[data-testid="login-form"]'
+          '[data-testid="login-form"]',
+          'form[method="post"]'
         ];
         
-        for (const selector of loginIndicators) {
-          if (document.querySelector(selector)) {
-            return false;
+        const foundLoginElements = [];
+        for (const selector of loginFormElements) {
+          const element = document.querySelector(selector);
+          if (element) {
+            foundLoginElements.push(selector);
           }
         }
+        debugLog.push(`Found login form elements: ${foundLoginElements.join(', ')}`);
         
-        // If we can't find login elements and we're on threads.net, assume we're logged in
-        return window.location.hostname.includes('threads.net');
+        // Check page title
+        const pageTitle = document.title;
+        debugLog.push(`Page title: ${pageTitle}`);
+        
+        const titleIndicatesLogin = pageTitle.includes('Login') || pageTitle.includes('Sign in');
+        if (titleIndicatesLogin) {
+          debugLog.push('Page title indicates login page');
+        }
+        
+        // Determine login status
+        const hasLoginIndicators = foundIndicators.length > 0;
+        const hasLoginForm = foundLoginElements.length > 0;
+        const onThreadsDomain = currentUrl.includes('threads.net') || currentUrl.includes('threads.com');
+        
+        // We're logged in if we have indicators AND no login form AND on threads domain
+        const isLoggedIn = hasLoginIndicators && !hasLoginForm && onThreadsDomain && !titleIndicatesLogin;
+        
+        debugLog.push(`Threads login determination:`);
+        debugLog.push(`  - Has login indicators: ${hasLoginIndicators} (${foundIndicators.length})`);
+        debugLog.push(`  - Has login form: ${hasLoginForm}`);
+        debugLog.push(`  - On threads domain: ${onThreadsDomain}`);
+        debugLog.push(`  - Title indicates login: ${titleIndicatesLogin}`);
+        debugLog.push(`  - Final result: ${isLoggedIn}`);
+        
+        return { isLoggedIn, debugLog, foundIndicators, foundLoginElements };
       });
-      return { loggedIn: isLoggedIn };
+      
+      // Log debug information
+      console.log('=== Threads Session Status Check ===');
+      loginCheckResult.debugLog.forEach(log => console.log(log));
+      console.log('====================================');
+      
+      return { loggedIn: loginCheckResult.isLoggedIn };
     }
     
     return { loggedIn: false };
@@ -2208,8 +2345,8 @@ export async function runAction(options) {
       throw new Error('searchCriteria is required for auto-comment action');
     }
 
-    // Launch browser
-    const browserResult = await launchBrowser(headful);
+    // Launch browser with platform isolation for headful mode
+    const browserResult = await launchBrowser(headful, platform);
     browser = browserResult.browser;
     page = browserResult.page;
 
@@ -3192,14 +3329,18 @@ export async function runAction(options) {
     });
     return { ok: false, message: error.message || 'An unknown error occurred' };
   } finally {
-    // Only close browser if not in headful mode
+    // Only close browser if not in headful mode AND no platform contexts exist
     if (!headful) {
       try {
         if (browser && !browser.isConnected()) {
           console.log('Browser already disconnected');
-        } else if (browser) {
+        } else if (browser && platformContexts.size === 0) {
+          // Only close if no platform contexts are active
           await browser.close();
           console.log('Browser closed successfully');
+        } else if (browser && platformContexts.size > 0) {
+          // Keep browser open to preserve platform contexts
+          console.log(`Browser kept open to preserve ${platformContexts.size} platform context(s): ${Array.from(platformContexts.keys()).join(', ')}`);
         }
       } catch (closeError) {
         console.error('Error closing browser:', closeError);
@@ -3234,123 +3375,24 @@ async function ensureBlueskyLoggedIn(page, { username, password }) {
       return true;
     }
     
-    console.log('🔐 Need to login - looking for first post to trigger login modal...');
+    console.log('🔐 Need to login - using simple settings page method...');
     
-    // Look for the first post's like button on the home screen
-    const likeSelectors = [
-      '[aria-label*="Like"]',
-      '[data-testid*="like"]', 
-      'button[aria-label*="like"]',
-      '[role="button"][aria-label*="Like"]'
-    ];
-    
-    let likeButton = null;
-    for (const selector of likeSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 3000 });
-        likeButton = await page.$(selector);
-        if (likeButton) {
-          console.log(`🎯 Found like button with selector: ${selector}`);
-          break;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!likeButton) {
-      throw new Error('Could not find any like button on the home screen to trigger login modal');
-    }
-    
-    // Click the like button to trigger the login modal
-    console.log('👆 Clicking like button to trigger login modal...');
-    await likeButton.click();
+    // Use the simpler method: go to settings page and use Tab Tab Enter
+    await page.goto('https://bsky.app/settings', { waitUntil: 'networkidle2' });
     await sleep(2000);
     
-    // Look for the "Sign in" button in the modal
-    const signInSelectors = [
-      'button:contains("Sign in")',
-      '[data-testid*="signIn"]',
-      '[aria-label*="Sign in"]',
-      'button[type="button"]:contains("Sign in")'
-    ];
-    
-    let signInButton = null;
-    for (const selector of signInSelectors) {
-      try {
-        if (selector.includes(':contains')) {
-          // Use page.evaluate for text-based selectors
-          signInButton = await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.find(btn => btn.textContent.toLowerCase().includes('sign in'));
-          });
-          if (signInButton) {
-            signInButton = await page.evaluateHandle(() => {
-              const buttons = Array.from(document.querySelectorAll('button'));
-              return buttons.find(btn => btn.textContent.toLowerCase().includes('sign in'));
-            });
-            console.log('🎯 Found Sign in button by text content');
-            break;
-          }
-        } else {
-          await page.waitForSelector(selector, { timeout: 3000 });
-          signInButton = await page.$(selector);
-          if (signInButton) {
-            console.log(`🎯 Found Sign in button with selector: ${selector}`);
-            break;
-          }
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!signInButton) {
-      throw new Error('Could not find Sign in button in the modal');
-    }
-    
-    // Click the Sign in button
-    console.log('👆 Clicking Sign in button...');
-    await signInButton.click();
-    await sleep(3000); // Give more time for the modal to fully appear
-    
-    // Use Tab + Enter sequence directly without removing focus
-    console.log('⌨️ Using Tab + Enter to open login fields (without removing focus)...');
-    
-    // Debug: Check what element has focus before Tab
-    const focusedElementBefore = await page.evaluate(() => {
-      const focused = document.activeElement;
-      return {
-        tagName: focused?.tagName,
-        textContent: focused?.textContent?.trim(),
-        className: focused?.className,
-        id: focused?.id
-      };
-    });
-    console.log('🔍 Focused element before Tab:', JSON.stringify(focusedElementBefore));
-    
-    // Now use Tab + Enter sequence with detailed logging
-    console.log('⌨️ Pressing Tab key...');
+    console.log('⌨️ Using Tab Tab Enter sequence to access login...');
+    console.log('⌨️ Pressing Tab key (first time)...');
     await page.keyboard.press('Tab');
-    await sleep(1000);
+    await sleep(500);
     
-    // Debug: Check what element has focus after Tab
-    const focusedElementAfter = await page.evaluate(() => {
-      const focused = document.activeElement;
-      return {
-        tagName: focused?.tagName,
-        textContent: focused?.textContent?.trim(),
-        className: focused?.className,
-        id: focused?.id
-      };
-    });
-    console.log('🔍 Focused element after Tab:', JSON.stringify(focusedElementAfter));
+    console.log('⌨️ Pressing Tab key (second time)...');
+    await page.keyboard.press('Tab');
+    await sleep(500);
     
-    console.log('⌨️ Pressing Enter key...');
+    console.log('⌨️ Pressing Enter key (should open login fields)...');
     await page.keyboard.press('Enter');
     await sleep(3000); // Give time for login fields to appear
-    
-    console.log('✅ Keyboard sequence completed, checking for login fields...');
     
     // Now look for and fill the login form
     console.log('📝 Looking for login form fields after keyboard navigation...');
@@ -3440,12 +3482,25 @@ async function ensureBlueskyLoggedIn(page, { username, password }) {
     }
     
     if (!submitButton) {
-      throw new Error('Could not find login submit button');
+      console.log('⚠️ Could not find submit button, will try Enter key after filling password');
     }
     
-    // Click login submit button
+    // Submit login form (try button click, fallback to Enter key)
     console.log('🚀 Submitting login form...');
-    await submitButton.click();
+    if (submitButton) {
+      try {
+        await submitButton.click();
+        console.log('✅ Submit button clicked successfully');
+      } catch (error) {
+        console.log('⚠️ Submit button click failed, trying Enter key...');
+        await page.keyboard.press('Enter');
+        console.log('✅ Enter key pressed for form submission');
+      }
+    } else {
+      console.log('⚠️ No submit button found, using Enter key...');
+      await page.keyboard.press('Enter');
+      console.log('✅ Enter key pressed for form submission');
+    }
     await sleep(4000); // Give it time to process login
     
     // Verify login success
