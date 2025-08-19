@@ -454,6 +454,292 @@
             border: 1px solid #d6d8db;
         }
 
+        /* Queue Styles */
+        .queue-header {
+            margin-bottom: 20px;
+        }
+
+        .queue-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .queue-count {
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .queue-list {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            min-height: 200px;
+            background: #fafafa;
+        }
+
+        .empty-queue {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: #888;
+        }
+
+        .empty-queue p {
+            margin: 5px 0;
+        }
+
+        .queue-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .queue-item-info {
+            flex: 1;
+        }
+
+        .queue-item-platform {
+            font-weight: bold;
+            color: #6f42c1;
+            margin-bottom: 5px;
+        }
+
+        .queue-item-account {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .queue-item-details {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .queue-item-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .queue-item-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-running {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 25px;
+            border-bottom: 1px solid #e0e0e0;
+            background: linear-gradient(135deg, #6f42c1, #8b5a96);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            opacity: 0.8;
+        }
+
+        .close:hover {
+            opacity: 1;
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .progress-text {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+
+        .progress-details {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .progress-container {
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background-color: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6f42c1, #8b5a96);
+            border-radius: 6px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-percentage {
+            text-align: center;
+            font-weight: 600;
+            color: #6f42c1;
+        }
+
+        .current-action {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid #6f42c1;
+        }
+
+        .action-platform {
+            font-weight: bold;
+            color: #6f42c1;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .action-account {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .action-details {
+            color: #888;
+            font-size: 13px;
+        }
+
+        .queue-log {
+            background: #f1f3f4;
+            border-radius: 6px;
+            padding: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .log-entry.success {
+            color: #28a745;
+        }
+
+        .log-entry.error {
+            color: #dc3545;
+        }
+
+        .log-entry.info {
+            color: #17a2b8;
+        }
+
+        .modal-footer {
+            padding: 20px 25px;
+            border-top: 1px solid #e0e0e0;
+            text-align: right;
+            background: #f8f9fa;
+            border-radius: 0 0 12px 12px;
+        }
+
         @media (max-width: 768px) {
             .row {
                 grid-template-columns: 1fr;
@@ -479,6 +765,49 @@
             .tab {
                 text-align: center;
             }
+
+            .queue-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .queue-item {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            .queue-item-actions {
+                justify-content: flex-end;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .modal-content {
+                width: 95%;
+                margin: 10% auto;
+            }
+
+            .modal-header {
+                padding: 15px 20px;
+            }
+
+            .modal-body {
+                padding: 20px;
+            }
+
+            .progress-info {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+
+            .queue-log {
+                max-height: 150px;
+                font-size: 12px;
+            }
         }
     </style>
 </head>
@@ -494,6 +823,7 @@
             <div class="tabs">
                 <button class="tab active" data-tab="login">Login & Setup</button>
                 <button class="tab" data-tab="auto-comment">Auto Comment</button>
+                <button class="tab" data-tab="posting-queue">Posting Queue</button>
             </div>
 
             <!-- Login Tab -->
@@ -506,6 +836,7 @@
             <option value="instagram">Instagram</option>
             <option value="x">X (Twitter)</option>
             <option value="threads">Threads</option>
+            <option value="bluesky">Bluesky</option>
           </select>
         </div>
 
@@ -541,7 +872,7 @@
         <div class="session-management">
           <h3>📱 Your Logged-In Accounts</h3>
           <div class="form-group">
-            <label for="activeSession">Select Active Account:</label>
+            <label for="activeSession">Account:</label>
             <select id="activeSession" name="activeSession">
               <option value="">No accounts logged in</option>
             </select>
@@ -562,7 +893,7 @@
             <div id="auto-comment" class="tab-content">
                 
                 <div class="form-group">
-                    <label for="autoActiveSession">Account to Use</label>
+                    <label for="autoActiveSession">Account:</label>
                     <select id="autoActiveSession">
                         <option value="">Select an account</option>
                     </select>
@@ -615,9 +946,81 @@
                 </div>
 
                 <div class="run-section">
-                    <button id="runBtn" class="btn">Run Action</button>
-                    <input type="checkbox" id="autoHeadful">
-                    <label for="autoHeadful">Headful Mode (Run in browser)</label>
+                    <div class="button-group">
+                        <button id="runBtn" class="btn btn-primary">Run Now</button>
+                        <button id="addToQueueBtn" class="btn btn-secondary">Add to Queue</button>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="autoHeadful">
+                        <label for="autoHeadful">Headful Mode (Run in browser)</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Posting Queue Tab -->
+            <div id="posting-queue" class="tab-content">
+                <div class="section">
+                    <h3>📋 Posting Queue</h3>
+                    <div class="queue-header">
+                        <span id="queueCount" class="queue-count">0 items in queue</span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div id="queueList" class="queue-list">
+                        <div class="empty-queue">
+                            <p>📭 No items in queue</p>
+                            <p><small>Add actions from the Auto Comment tab to build your posting queue</small></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="queue-controls">
+                        <button id="runQueueBtn" class="btn btn-primary">▶️ Run Queue</button>
+                        <button id="clearQueueBtn" class="btn btn-danger">🗑️ Clear Queue</button>
+                    </div>
+                </div>
+
+                <div id="queueStatus" class="status"></div>
+            </div>
+
+            <!-- Queue Progress Modal -->
+            <div id="queueModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>🔄 Processing Queue</h3>
+                        <span class="close" id="closeModal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="progress-info">
+                            <div class="progress-text">
+                                <span id="currentStep">Preparing to start...</span>
+                            </div>
+                            <div class="progress-details">
+                                <span id="progressCounter">0 / 0</span>
+                            </div>
+                        </div>
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div id="progressFill" class="progress-fill"></div>
+                            </div>
+                            <div class="progress-percentage">
+                                <span id="progressPercent">0%</span>
+                            </div>
+                        </div>
+                        <div class="current-action">
+                            <div class="action-platform" id="actionPlatform"></div>
+                            <div class="action-account" id="actionAccount"></div>
+                            <div class="action-details" id="actionDetails"></div>
+                        </div>
+                        <div class="queue-log" id="queueLog">
+                            <div class="log-entry">Queue processing will begin shortly...</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="cancelQueue" class="btn btn-danger">Cancel Queue</button>
+                    </div>
                 </div>
             </div>
 
@@ -695,6 +1098,18 @@
                 if (commentSection) {
                     commentSection.style.display = 'block';
                 }
+            } else if (activeTab === 'posting-queue') {
+                // Hide auto-comment sections when on posting-queue tab
+                const searchSection = document.getElementById('searchSection');
+                const aiSection = document.getElementById('aiSection');
+                const commentSection = document.getElementById('commentSection');
+                
+                if (searchSection) searchSection.style.display = 'none';
+                if (aiSection) aiSection.style.display = 'none';
+                if (commentSection) commentSection.style.display = 'none';
+                
+                // Update queue display when switching to queue tab
+                updateQueueDisplay();
             }
             
             // Update session dropdown
@@ -723,15 +1138,19 @@
                         const option = document.createElement('option');
                         option.value = session;
                         
-                        // Get platform info for this session and add icon
+                        // Get platform info for this session and format as "Platform | Account name"
                         let displayText = session;
                         try {
                             const sessionData = localStorage.getItem(`session_${session}`);
                             if (sessionData) {
                                 const parsed = JSON.parse(sessionData);
                                 const platform = parsed.platform || 'unknown';
-                                const platformEmoji = platform === 'instagram' ? '📷' : platform === 'threads' ? '🧵' : platform === 'x' ? '🐦' : '📱';
-                                displayText = `${platformEmoji} ${session}`;
+                                const platformName = platform === 'instagram' ? 'Instagram' : 
+                                                   platform === 'threads' ? 'Threads' : 
+                                                   platform === 'x' ? 'X (Twitter)' : 
+                                                   platform === 'bluesky' ? 'Bluesky' : 
+                                                   platform.charAt(0).toUpperCase() + platform.slice(1);
+                                displayText = `${platformName} | ${session}`;
                             }
                         } catch (error) {
                             // Fallback to just session name
@@ -758,15 +1177,19 @@
                         const option = document.createElement('option');
                         option.value = session;
                         
-                        // Get platform info for this session
+                        // Get platform info for this session and format as "Platform | Account name"
                         let displayText = session;
                         try {
                             const sessionData = localStorage.getItem(`session_${session}`);
                             if (sessionData) {
                                 const parsed = JSON.parse(sessionData);
                                 const platform = parsed.platform || 'unknown';
-                                const platformEmoji = platform === 'instagram' ? '📷' : platform === 'threads' ? '🧵' : platform === 'x' ? '🐦' : '📱';
-                                displayText = `${platformEmoji} ${session}`;
+                                const platformName = platform === 'instagram' ? 'Instagram' : 
+                                                   platform === 'threads' ? 'Threads' : 
+                                                   platform === 'x' ? 'X (Twitter)' : 
+                                                   platform === 'bluesky' ? 'Bluesky' : 
+                                                   platform.charAt(0).toUpperCase() + platform.slice(1);
+                                displayText = `${platformName} | ${session}`;
                             }
                         } catch (error) {
                             // Fallback to just session name
@@ -837,11 +1260,13 @@
                 if (keywordsField) keywordsField.style.display = 'block';
                 if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
             } else {
-                // Instagram and Threads - only show hashtag field
+                // Instagram, Threads, and Bluesky - only show hashtag field
                 if (hashtagField) hashtagField.style.display = 'block';
                 if (keywordsField) keywordsField.style.display = 'none';
                 if (platform === 'threads') {
                     if (hashtagHelp) hashtagHelp.textContent = 'Search for posts containing this text';
+                } else if (platform === 'bluesky') {
+                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with hashtags or keywords';
                 } else {
                     if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
                 }
@@ -915,9 +1340,327 @@
             console.error('🎯 WEB UI: Run button not found!');
         }
 
+        // Queue Management
+        let postingQueue = JSON.parse(localStorage.getItem('postingQueue') || '[]');
+
+        function updateQueueDisplay() {
+            const queueList = document.getElementById('queueList');
+            const queueCount = document.getElementById('queueCount');
+            
+            queueCount.textContent = `${postingQueue.length} item${postingQueue.length !== 1 ? 's' : ''} in queue`;
+            
+            if (postingQueue.length === 0) {
+                queueList.innerHTML = `
+                    <div class="empty-queue">
+                        <p>📭 No items in queue</p>
+                        <p><small>Add actions from the Auto Comment tab to build your posting queue</small></p>
+                    </div>
+                `;
+            } else {
+                queueList.innerHTML = postingQueue.map((item, index) => `
+                    <div class="queue-item">
+                        <div class="queue-item-info">
+                            <div class="queue-item-platform">${item.platformName || item.platform}</div>
+                            <div class="queue-item-account">Account: ${item.account}</div>
+                            <div class="queue-item-details">
+                                ${item.hashtag ? `#${item.hashtag}` : item.keywords || 'No search terms'} • 
+                                ${item.maxPosts} posts • 
+                                ${item.useAI ? 'AI Comments' : 'Manual Comment'} • 
+                                ${item.likePost ? 'With Likes' : 'Comments Only'}
+                            </div>
+                        </div>
+                        <div class="queue-item-actions">
+                            <span class="queue-item-status status-${item.status || 'pending'}">${(item.status || 'pending').toUpperCase()}</span>
+                            <button class="btn btn-danger btn-sm" onclick="removeFromQueue(${index})">Remove</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function addToQueue() {
+            const activeSession = document.getElementById('autoActiveSession').value;
+            if (!activeSession) {
+                updateStatus('Please select an account first', 'error');
+                return;
+            }
+
+            // Get platform info for this session
+            let platform = 'instagram';
+            let platformName = 'Instagram';
+            try {
+                const sessionData = localStorage.getItem(`session_${activeSession}`);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    platform = parsed.platform || 'instagram';
+                    platformName = platform === 'instagram' ? 'Instagram' : 
+                                 platform === 'threads' ? 'Threads' : 
+                                 platform === 'x' ? 'X (Twitter)' : 
+                                 platform === 'bluesky' ? 'Bluesky' : 
+                                 platform.charAt(0).toUpperCase() + platform.slice(1);
+                }
+            } catch (error) {
+                console.log('Could not get platform from session data, using default');
+            }
+
+            const queueItem = {
+                id: Date.now(),
+                platform: platform,
+                platformName: platformName,
+                account: activeSession,
+                hashtag: document.getElementById('hashtag').value.trim(),
+                keywords: document.getElementById('keywords').value.trim(),
+                maxPosts: parseInt(document.getElementById('maxPosts').value) || 5,
+                useAI: document.getElementById('useAI').checked,
+                comment: document.getElementById('comment').value.trim(),
+                likePost: document.getElementById('likePost').checked,
+                headful: false, // Always headless when running in queue
+                status: 'pending',
+                addedAt: new Date().toISOString()
+            };
+
+            postingQueue.push(queueItem);
+            localStorage.setItem('postingQueue', JSON.stringify(postingQueue));
+            updateQueueDisplay();
+            updateStatus(`Added to queue: ${platformName} | ${activeSession}`, 'success');
+        }
+
+        function removeFromQueue(index) {
+            postingQueue.splice(index, 1);
+            localStorage.setItem('postingQueue', JSON.stringify(postingQueue));
+            updateQueueDisplay();
+            updateStatus('Item removed from queue', 'info');
+        }
+
+        function clearQueue() {
+            if (confirm('Are you sure you want to clear the entire queue?')) {
+                postingQueue = [];
+                localStorage.setItem('postingQueue', JSON.stringify(postingQueue));
+                updateQueueDisplay();
+                updateStatus('Queue cleared', 'info');
+            }
+        }
+
+        let queueCancelled = false;
+
+        function showQueueModal() {
+            const modal = document.getElementById('queueModal');
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden'; // Prevent background scrolling
+        }
+
+        function hideQueueModal() {
+            const modal = document.getElementById('queueModal');
+            modal.style.display = 'none';
+            document.body.style.overflow = 'auto'; // Restore scrolling
+        }
+
+        function updateProgress(current, total, step, item = null) {
+            const progressFill = document.getElementById('progressFill');
+            const progressPercent = document.getElementById('progressPercent');
+            const progressCounter = document.getElementById('progressCounter');
+            const currentStep = document.getElementById('currentStep');
+            
+            const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+            
+            progressFill.style.width = `${percentage}%`;
+            progressPercent.textContent = `${percentage}%`;
+            progressCounter.textContent = `${current} / ${total}`;
+            currentStep.textContent = step;
+
+            if (item) {
+                document.getElementById('actionPlatform').textContent = item.platformName;
+                document.getElementById('actionAccount').textContent = `Account: ${item.account}`;
+                document.getElementById('actionDetails').textContent = 
+                    `${item.hashtag ? `#${item.hashtag}` : item.keywords || 'No search terms'} • ${item.maxPosts} posts • ${item.useAI ? 'AI Comments' : 'Manual Comment'}`;
+            }
+        }
+
+        function addLogEntry(message, type = '') {
+            const queueLog = document.getElementById('queueLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            queueLog.appendChild(entry);
+            queueLog.scrollTop = queueLog.scrollHeight;
+        }
+
+        // Simulate more detailed progress during long operations
+        async function simulateDetailedProgress(i, total, item) {
+            const steps = [
+                { text: `🌐 Opening browser for ${item.platformName}...`, delay: 1000 },
+                { text: `🔐 Authenticating with ${item.account}...`, delay: 1200 },
+                { text: `🔍 Navigating to search page...`, delay: 800 },
+                { text: `📝 Entering search criteria: ${item.hashtag ? `#${item.hashtag}` : item.keywords}...`, delay: 600 },
+                { text: `📊 Loading posts from feed...`, delay: 1500 },
+                { text: `🤖 ${item.useAI ? 'Generating AI comments...' : 'Preparing manual comments...'}`, delay: item.useAI ? 2000 : 800 },
+                { text: `💬 Starting to comment on posts (1/${item.maxPosts})...`, delay: 1200 },
+                { text: `${item.likePost ? '❤️ Liking and commenting on posts...' : '💬 Adding comments to posts...'}`, delay: 1800 },
+                { text: `🔄 Processing post 2 of ${item.maxPosts}...`, delay: 1500 },
+                { text: `🔄 Processing post 3 of ${item.maxPosts}...`, delay: 1500 },
+                { text: `📈 Continuing through remaining posts...`, delay: 2000 },
+                { text: `✅ Finalizing interactions...`, delay: 800 }
+            ];
+
+            // Calculate sub-progress within this item
+            const baseProgress = i / total * 100;
+            const nextItemProgress = (i + 1) / total * 100;
+            const progressRange = nextItemProgress - baseProgress;
+
+            for (let step = 0; step < steps.length; step++) {
+                if (queueCancelled) break;
+                
+                // Calculate incremental progress within this item
+                const stepProgress = baseProgress + (step / steps.length) * progressRange;
+                const progressFill = document.getElementById('progressFill');
+                const progressPercent = document.getElementById('progressPercent');
+                
+                progressFill.style.width = `${stepProgress}%`;
+                progressPercent.textContent = `${Math.round(stepProgress)}%`;
+                
+                updateProgress(i, total, steps[step].text, item);
+                addLogEntry(steps[step].text.replace(/[🌐🔐🔍📝📊🤖💬❤️✅🔄📈]/g, '').trim(), 'info');
+                
+                await new Promise(resolve => setTimeout(resolve, steps[step].delay));
+                
+                // Skip some steps for smaller maxPosts
+                if (item.maxPosts <= 3 && (step === 8 || step === 9)) {
+                    continue;
+                }
+            }
+        }
+
+        async function runQueue() {
+            if (postingQueue.length === 0) {
+                updateStatus('No items in queue to run', 'error');
+                return;
+            }
+
+            queueCancelled = false;
+            showQueueModal();
+            
+            // Clear previous log
+            document.getElementById('queueLog').innerHTML = '';
+            addLogEntry('Queue processing started', 'info');
+
+            const pendingItems = postingQueue.filter(item => item.status !== 'completed');
+            updateProgress(0, pendingItems.length, 'Initializing queue...');
+
+            for (let i = 0; i < pendingItems.length; i++) {
+                if (queueCancelled) {
+                    addLogEntry('Queue processing cancelled by user', 'error');
+                    break;
+                }
+
+                const item = pendingItems[i];
+                item.status = 'running';
+                updateQueueDisplay();
+
+                updateProgress(i, pendingItems.length, `Processing ${item.platformName} | ${item.account}...`, item);
+                addLogEntry(`Starting: ${item.platformName} | ${item.account}`, 'info');
+
+                try {
+                    // Start the detailed progress simulation in parallel with the actual request
+                    const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
+                    
+                    const requestPromise = fetch('/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'auto-comment',
+                            platform: item.platform,
+                            sessionName: item.account,
+                            searchCriteria: item.hashtag ? { hashtag: item.hashtag } : { keywords: item.keywords },
+                            maxPosts: item.maxPosts,
+                            useAI: item.useAI,
+                            comment: item.comment,
+                            likePost: item.likePost,
+                            headful: false // Always headless in queue
+                        })
+                    });
+
+                    // Wait for both the progress simulation and the actual request
+                    const [_, response] = await Promise.all([progressPromise, requestPromise]);
+                    
+                    // Final processing step
+                    updateProgress(i, pendingItems.length, `📋 Processing results...`, item);
+                    addLogEntry(`📋 Receiving results from ${item.platformName}`, 'info');
+
+                    const result = await response.json();
+                    
+                    if (result.ok) {
+                        item.status = 'completed';
+                        updateProgress(i, pendingItems.length, `✅ Successfully completed!`, item);
+                        addLogEntry(`✅ Completed: ${item.platformName} | ${item.account} - ${result.message || 'Success'}`, 'success');
+                        
+                        // Show completion stats if available
+                        if (result.stats) {
+                            addLogEntry(`📊 Stats: ${result.stats}`, 'info');
+                        }
+                    } else {
+                        item.status = 'failed';
+                        updateProgress(i, pendingItems.length, `❌ Failed - see log for details`, item);
+                        addLogEntry(`❌ Failed: ${item.platformName} | ${item.account} - ${result.message}`, 'error');
+                    }
+                } catch (error) {
+                    item.status = 'failed';
+                    updateProgress(i, pendingItems.length, `❌ Network error occurred`, item);
+                    addLogEntry(`❌ Network Error: ${item.platformName} | ${item.account} - ${error.message}`, 'error');
+                }
+
+                updateQueueDisplay();
+                localStorage.setItem('postingQueue', JSON.stringify(postingQueue));
+
+                // Update progress
+                updateProgress(i + 1, pendingItems.length, item.status === 'completed' ? 'Completed successfully' : 'Completed with errors', item);
+
+                // Wait between items (except for last item)
+                if (i < pendingItems.length - 1 && !queueCancelled) {
+                    updateProgress(i + 1, pendingItems.length, 'Waiting before next item...', item);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+
+            if (!queueCancelled) {
+                updateProgress(pendingItems.length, pendingItems.length, '🎉 Queue processing completed!');
+                addLogEntry('🎉 All queue items processed!', 'success');
+                
+                // Auto-close modal after 3 seconds
+                setTimeout(() => {
+                    hideQueueModal();
+                }, 3000);
+            }
+        }
+
+        // Add queue event listeners
+        document.getElementById('addToQueueBtn').addEventListener('click', addToQueue);
+        document.getElementById('runQueueBtn').addEventListener('click', runQueue);
+        document.getElementById('clearQueueBtn').addEventListener('click', clearQueue);
+
+        // Modal event listeners
+        document.getElementById('closeModal').addEventListener('click', hideQueueModal);
+        document.getElementById('cancelQueue').addEventListener('click', () => {
+            queueCancelled = true;
+            addLogEntry('Cancelling queue processing...', 'error');
+            setTimeout(() => hideQueueModal(), 1000);
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (event) => {
+            const modal = document.getElementById('queueModal');
+            if (event.target === modal) {
+                if (!queueCancelled) {
+                    queueCancelled = true;
+                    addLogEntry('Queue processing cancelled', 'error');
+                }
+                hideQueueModal();
+            }
+        });
+
         // Initialize UI
         console.log('🎯 WEB UI: Page loaded, initializing UI...');
         updateUI();
+        updateQueueDisplay();
         console.log('🎯 WEB UI: UI initialized');
 
         // Session management functions

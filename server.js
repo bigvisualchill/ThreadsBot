@@ -27,6 +27,8 @@ let isRunning = false;
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.post('/run', async (req, res) => {
+  console.log('🔥 === POST /run ENDPOINT HIT ===');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
   console.log('Received request:', {
     action: req.body?.action,
     platform: req.body?.platform,
@@ -66,7 +68,9 @@ app.post('/run', async (req, res) => {
 
   try {
     isRunning = true;
+    console.log('🚀 SERVER: About to call runAction');
     console.log('Starting runAction with:', { action, platform, sessionName, headful });
+    console.log('🚀 SERVER: Calling runAction now...');
     
     const result = await runAction({
       platform,

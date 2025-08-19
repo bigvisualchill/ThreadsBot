@@ -5,18 +5,6 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
-import { 
-  ensureThreadsLoggedIn, 
-  threadsLike, 
-  threadsComment, 
-  discoverThreadsPosts 
-} from './threads-functions.js';
-import { 
-  ensureInstagramLoggedIn, 
-  instagramLike, 
-  instagramComment, 
-  discoverInstagramPosts 
-} from './instagram-functions.js';
 import { hasMyCommentAndCache, clearCommentCache, getCommentCacheStats, debugCommentDetection } from './utils/igHasMyComment.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
 // X cache imports removed - will be rebuilt from scratch
@@ -24,7 +12,7 @@ import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommen
 puppeteer.use(StealthPlugin());
 
 // cross-runtime sleep (works in any Puppeteer version)
-export const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,7 +46,7 @@ async function $xFirst(page, xpath) {
 }
 
 // Helper function to click elements by text content
-export async function tryClickByText(page, texts = []) {
+async function tryClickByText(page, texts = []) {
   for (const t of texts) {
     try {
       // Use page.evaluate to find and click elements by text
@@ -100,7 +88,9 @@ if (process.env.OPENAI_API_KEY) {
 let globalBrowser = null;
 let globalPage = null;
 
-// Instagram tracking variables moved to instagram-functions.js
+// Track liked posts to avoid duplicates
+let likedPosts = new Set();
+let discoveredPosts = new Set();
 
 function getSessionFilePath(platform, sessionName) {
   const sessionsDir = path.join(__dirname, '.sessions');
@@ -235,11 +225,6 @@ async function launchBrowser(headful) {
   }
   
   try {
-    console.log('🚀 Browser Launch Debug:');
-    console.log('   headful parameter:', headful);
-    console.log('   headless will be set to:', headful ? false : true);
-    console.log('   (headful=true means headless=false, so browser should be visible)');
-    
     const browser = await puppeteer.launch({
       headless: headful ? false : true,
       args: [
@@ -257,12 +242,7 @@ async function launchBrowser(headful) {
       ignoreDefaultArgs: ['--disable-extensions'],
     });
     
-    console.log('✅ Browser launched successfully');
-    console.log('   Browser process PID:', browser.process()?.pid || 'N/A');
-    console.log('   Browser connected:', browser.isConnected());
-    
     const page = await browser.newPage();
-    console.log('✅ New page created successfully');
     await setupPage(page, headful);
     
     // Store global references for headful mode
@@ -551,7 +531,120 @@ async function generateAIComment(postContent, sessionAssistantId = null) {
   }
 }
 
-// Instagram functions moved to instagram-functions.js
+// Post Discovery Functions
+async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10) {
+  console.log(`🚀 DISCOVERY: Starting Instagram post discovery with criteria:`, searchCriteria);
+  console.log(`🚀 DISCOVERY: Max posts requested: ${maxPosts}`);
+  console.log(`🚀 DISCOVERY: Currently discovered posts: ${discoveredPosts.size}`);
+  
+  const { hashtag, keywords } = searchCriteria;
+  
+  if (hashtag) {
+    // Search by hashtag
+    const url = `https://www.instagram.com/explore/tags/${encodeURIComponent(hashtag.replace('#', ''))}/`;
+    console.log(`🚀 DISCOVERY: Navigating to hashtag URL: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    
+    // Scroll to load more posts
+    console.log(`🚀 DISCOVERY: Scrolling to load more posts...`);
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+    
+    // Extract post URLs
+    console.log(`🚀 DISCOVERY: Extracting post URLs...`);
+    const posts = await page.$$eval('a[href^="/p/"]', (links, maxPosts) => {
+      const urls = Array.from(new Set(links.map(link => link.getAttribute('href'))))
+        .slice(0, maxPosts)
+        .map(href => `https://www.instagram.com${href}`);
+      console.log(`Found ${urls.length} post URLs:`, urls.slice(0, 3));
+      return urls;
+    }, maxPosts);
+    
+    console.log(`🚀 DISCOVERY: Raw posts found: ${posts.length}`);
+    console.log(`🚀 DISCOVERY: Sample posts:`, posts.slice(0, 3));
+    
+    // Filter out already discovered posts
+    const newPosts = posts.filter(postUrl => !discoveredPosts.has(postUrl));
+    
+    console.log(`🚀 DISCOVERY: After filtering, new posts: ${newPosts.length}`);
+    console.log(`🚀 DISCOVERY: Sample new posts:`, newPosts.slice(0, 3));
+    
+    // Add new posts to discovered set
+    newPosts.forEach(postUrl => discoveredPosts.add(postUrl));
+    
+    console.log(`🚀 DISCOVERY: Found ${posts.length} total posts, ${newPosts.length} new posts (${posts.length - newPosts.length} already discovered)`);
+    console.log(`🚀 DISCOVERY: Total discovered posts now: ${discoveredPosts.size}`);
+    
+    return newPosts;
+  } else if (keywords) {
+    // Search by keywords (Instagram search)
+    const searchUrl = `https://www.instagram.com/explore/tags/${encodeURIComponent(keywords.split(' ')[0])}/`;
+    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    
+    // Similar extraction logic
+    const posts = await page.$$eval('a[href^="/p/"]', (links, maxPosts) => {
+      return Array.from(new Set(links.map(link => link.getAttribute('href'))))
+        .slice(0, maxPosts)
+        .map(href => `https://www.instagram.com${href}`);
+    }, maxPosts);
+    
+    // Filter out already discovered posts
+    const newPosts = posts.filter(postUrl => !discoveredPosts.has(postUrl));
+    
+    // Add new posts to discovered set
+    newPosts.forEach(postUrl => discoveredPosts.add(postUrl));
+    
+    console.log(`🚀 DISCOVERY: Found ${posts.length} total posts, ${newPosts.length} new posts (${posts.length - newPosts.length} already discovered)`);
+    
+    return newPosts;
+  }
+  
+  return [];
+}
+
+// Incremental discovery that can be called repeatedly to top up a queue
+async function nextInstagramCandidates(page, searchCriteria, seen = new Set(), minNeeded = 6, maxScrolls = 20) {
+  // Normalize criteria -> URL
+  const parsed = typeof searchCriteria === 'string'
+    ? (searchCriteria.startsWith('#') ? { hashtag: searchCriteria } : { keywords: searchCriteria })
+    : (searchCriteria || {});
+  const { hashtag, keywords } = parsed;
+
+  const baseUrl = hashtag
+    ? `https://www.instagram.com/explore/tags/${encodeURIComponent(hashtag.replace('#',''))}/`
+    : `https://www.instagram.com/explore/tags/${encodeURIComponent((keywords || '').split(/\s+/)[0])}/`;
+
+  // If we aren't already on the right explore page, navigate there
+  if (!page.url().startsWith(baseUrl)) {
+    await page.goto(baseUrl, { waitUntil: 'networkidle2' });
+    await sleep(500);
+  }
+
+  const collected = new Set(); // local new URLs this call
+
+  for (let i = 0; i < maxScrolls && collected.size < minNeeded; i++) {
+    // Collect links for posts & reels (avoid duplicates & already-seen)
+    const hrefs = await page.$$eval(
+      'a[href^="/p/"], a[href^="/reel/"], a[href^="/tv/"]',
+      as => as.map(a => a.getAttribute('href')).filter(Boolean)
+    );
+
+    for (const href of hrefs) {
+      const abs = href.startsWith('http') ? href : `https://www.instagram.com${href}`;
+      if (!seen.has(abs)) collected.add(abs);
+    }
+
+    // Scroll to load more
+    await page.evaluate(() => window.scrollBy(0, document.body.scrollHeight));
+    await sleep(500 + Math.floor(Math.random() * 300));
+  }
+
+  try { collected.forEach(u => discoveredPosts.add(u)); } catch {}
+
+  return Array.from(collected);
+}
 
 // Global variable to track scroll depth across discovery calls
 let xSearchScrollDepth = 0;
@@ -1105,18 +1198,13 @@ async function getPostContent(page, postUrl, platform) {
           const parent = el.parentElement;
           
           // Skip if it's clearly a username, timestamp, or UI element
-          if (text.length < 15) continue; // Increased minimum to avoid usernames
+          if (text.length < 10) continue;
           if (text.match(/^@\w+$/)) continue; // Skip usernames like @username
-          if (text.match(/^[A-Za-z0-9_]+$/)) continue; // Skip single usernames without @
           if (text.match(/^\d+[smhd]$/)) continue; // Skip timestamps like 2h, 5m
           if (text.match(/^(Like|Reply|Share|Follow|•|\d+$)$/i)) continue; // Skip UI buttons
           if (text.includes('Suggested for you')) continue;
           if (text.includes('View profile')) continue;
           if (text.includes('Follow')) continue;
-          if (text.includes('@') && !text.includes(' ')) continue; // Skip standalone mentions
-          if (text.startsWith('@') && text.length < 30) continue; // Skip short mentions
-          if (text.includes('Verified')) continue;
-          if (!text.includes(' ')) continue; // Ensure it's a sentence, not a single word
           if (parent?.getAttribute('role') === 'button') continue; // Skip clickable elements
           
           // Look for characteristics of actual post content
@@ -1167,21 +1255,17 @@ async function getPostContent(page, postUrl, platform) {
             return { text, isButton, element: n };
           })
           .filter(({ text, isButton }) => {
-            // More strict filtering to avoid usernames
-            if (text.length < 20) return false; // Increased minimum length
+            // More strict filtering
+            if (text.length < 15) return false; // Minimum length for post content
             if (text.length > 2000) return false; // Maximum reasonable length
             if (isButton) return false; // Skip button elements
             if (text.match(/^@\w+$/)) return false; // Skip standalone usernames
-            if (text.match(/^[A-Za-z0-9_]+$/)) return false; // Skip single usernames without @
             if (text.match(/^\d+[smhd]$/)) return false; // Skip timestamps
             if (text.match(/^(Like|Reply|Share|Follow|•|\d+$|View profile|Suggested for you|More|Show)$/i)) return false;
             if (text.includes('threads.net')) return false;
             if (text.includes('@threads')) return false;
             if (text.includes('Verified')) return false;
-            if (text.includes('Follow') && text.length < 50) return false; // Skip short Follow texts
-            if (text.includes('@') && !text.includes(' ')) return false; // Skip standalone mentions
-            if (text.startsWith('@') && text.length < 40) return false; // Skip short mentions
-            if (!text.includes(' ')) return false; // Ensure it's a sentence, not a single word
+            if (text.includes('Follow')) return false;
             
             return true;
           })
@@ -1286,11 +1370,668 @@ async function handleOneTapPage(page) {
   }
 }
 
-// Instagram login function moved to instagram-functions.js
+// Instagram flows
+async function ensureInstagramLoggedIn(page, { username, password }) {
+  try {
+    console.log('Checking Instagram login status...');
+    
+    // First, go to Instagram home to check current status
+    const currentUrl = page.url();
+    if (!currentUrl.includes('instagram.com')) {
+      console.log('Navigating to Instagram...');
+      await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2', timeout: 30000 });
+    }
+    
+    // Wait for page to load briefly
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Check current URL after navigation
+    const finalUrl = page.url();
+    console.log('Final URL after navigation:', finalUrl);
+    
+    // If we're on the one-tap page, handle it immediately
+    if (finalUrl.includes('/accounts/onetap/')) {
+      console.log('Found one-tap page - handling save login info prompt');
+      await handleOneTapPage(page);
+      return true;
+    }
+    
+    // Check if we're already logged in to main Instagram
+    const loginCheckResult = await page.evaluate(() => {
+      const debugLog = [];
+      debugLog.push('Checking login status on URL: ' + window.location.href);
+      
+      // First check: Are we on a login page?
+      if (window.location.href.includes('/accounts/login/')) {
+        debugLog.push('On login page - NOT logged in');
+        return { isLoggedIn: false, debugLog };
+      }
+      
+      // Second check: Look for specific login form elements (indicates NOT logged in)
+      const usernameInput = document.querySelector('input[name="username"]');
+      const passwordInput = document.querySelector('input[name="password"]');
+      const usernameTypeInput = document.querySelector('input[type="text"][placeholder*="username"]');
+      const phoneEmailInput = document.querySelector('input[placeholder*="Phone number, username, or email"]');
+      
+      const loginFormElements = [];
+      if (usernameInput) loginFormElements.push('input[name="username"]');
+      if (passwordInput) loginFormElements.push('input[name="password"]');
+      if (usernameTypeInput) loginFormElements.push('input[type="text"][placeholder*="username"]');
+      if (phoneEmailInput) loginFormElements.push('input[placeholder*="Phone number, username, or email"]');
+      
+      // Only consider it a login form if we have username AND password inputs together
+      const hasLoginForm = (usernameInput && passwordInput) || usernameTypeInput || phoneEmailInput;
+      
+      if (hasLoginForm) {
+        debugLog.push('Found login form elements: ' + loginFormElements.join(', ') + ' - NOT logged in');
+        return { isLoggedIn: false, debugLog };
+      } else if (loginFormElements.length > 0) {
+        debugLog.push('Found some form elements but not a complete login form: ' + loginFormElements.join(', '));
+      }
+      
+      // Third check: Look for logged-in indicators
+      const loginIndicators = [
+        // Navigation elements
+        'nav a[href*="/accounts/edit/"]',
+        'a[href*="/accounts/edit/"]', 
+        '[data-testid="user-avatar"]',
+        'img[alt*="profile picture"]',
+        'a[href*="/accounts/activity/"]',
+        '[data-testid="AppTabBar_Profile_Link"]',
+        'a[href*="/direct/"]',
+        // SVG icons in navigation
+        'svg[aria-label="Home"]',
+        'svg[aria-label="Search"]',
+        'svg[aria-label="New post"]',
+        'svg[aria-label="Activity Feed"]',
+        'svg[aria-label="Profile"]',
+        // General logged-in elements
+        '[role="main"]',
+        'nav[role="navigation"]',
+        // Story elements (only visible when logged in)
+        '[data-testid="story-viewer"]',
+        // Feed elements
+        'article',
+        '[data-testid="post"]'
+      ];
+      
+      let foundElements = [];
+      for (const selector of loginIndicators) {
+        const element = document.querySelector(selector);
+        if (element) {
+          foundElements.push(selector);
+        }
+      }
+      
+      debugLog.push('Found login indicators: ' + foundElements.join(', '));
+      debugLog.push('Page title: ' + document.title);
+      
+      // Fourth check: Check page title (Instagram login page has specific title)
+      if (document.title.includes('Login') || document.title.includes('Sign up')) {
+        debugLog.push('Login/signup page title detected - NOT logged in');
+        return { isLoggedIn: false, debugLog };
+      }
+      
+      // If we found any strong login indicators and no login form, we're logged in
+      const strongIndicators = foundElements.filter(el => 
+        el.includes('nav') || 
+        el.includes('profile') || 
+        el.includes('Home') || 
+        el.includes('Search') ||
+        el.includes('accounts/edit') ||
+        el.includes('direct')
+      );
+      
+      debugLog.push('Strong login indicators: ' + strongIndicators.join(', '));
+      
+      // More lenient: just need 1 strong indicator OR several weak ones
+      const isLoggedIn = strongIndicators.length >= 1 || foundElements.length >= 3;
+      debugLog.push('Login detection result: ' + isLoggedIn);
+      
+      return { isLoggedIn, debugLog };
+    });
+    
+    // Log all the debug information from the browser
+    console.log('=== Instagram Login Detection Debug ===');
+    loginCheckResult.debugLog.forEach(log => console.log(log));
+    console.log('=======================================');
+    
+    if (loginCheckResult.isLoggedIn) {
+      console.log('Already logged in to Instagram');
+      return true;
+    }
 
-// Instagram like function moved to instagram-functions.js
+    if (!username || !password) {
+      throw new Error('Instagram session missing and no credentials provided. Provide username/password or login headfully and save a session.');
+    }
 
-// Instagram comment function moved to instagram-functions.js
+    console.log('Logging in to Instagram...');
+    await page.goto('https://www.instagram.com/accounts/login/', { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Brief wait for page to settle
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // Check again if we're logged in (sometimes redirect happens)
+    const stillLoggedIn = await page.evaluate(() => {
+      const currentUrl = window.location.href;
+      console.log('Current URL after login redirect:', currentUrl);
+      
+      // If we're on one-tap page, that means we're logged in
+      if (currentUrl.includes('/accounts/onetap/')) {
+        console.log('On one-tap page - logged in');
+        return true;
+      }
+      
+      // More specific selectors that only appear when logged in
+      const loginIndicators = [
+        'nav a[href*="/accounts/edit/"]',
+        'a[href*="/accounts/edit/"]', 
+        '[data-testid="user-avatar"]',
+        'img[alt*="profile picture"]',
+        'a[href*="/accounts/activity/"]',
+        '[data-testid="AppTabBar_Profile_Link"]',
+        'a[href*="/direct/"]',
+        // Look for specific logged-in elements
+        'svg[aria-label="Home"]',
+        'svg[aria-label="Search"]',
+        'svg[aria-label="New post"]',
+        'svg[aria-label="Activity Feed"]'
+      ];
+      
+      let foundElements = [];
+      for (const selector of loginIndicators) {
+        const element = document.querySelector(selector);
+        if (element) {
+          foundElements.push(selector);
+        }
+      }
+      
+      console.log('Found login indicators after redirect:', foundElements);
+      
+      // Also check if we see login form (indicates NOT logged in)
+      const loginForm = document.querySelector('input[name="username"]') || 
+                       document.querySelector('input[type="text"][placeholder*="username"]') ||
+                       document.querySelector('form[method="post"]');
+      
+      if (loginForm) {
+        console.log('Found login form after redirect - NOT logged in');
+        return false;
+      }
+      
+      // Need at least 2 login indicators to be confident
+      return foundElements.length >= 2;
+    });
+    
+    if (stillLoggedIn) {
+      console.log('Already logged in to Instagram (after navigation)');
+      return true;
+    }
+    
+    console.log('Not logged in, proceeding with login form...');
+    
+    // Try to find the login form with multiple selectors
+    const usernameSelector = await page.evaluate(() => {
+      const selectors = [
+        'input[name="username"]',
+        'input[aria-label="Phone number, username, or email"]',
+        'input[placeholder*="username"]',
+        'input[placeholder*="email"]',
+        'input[type="text"]'
+      ];
+      
+      for (const selector of selectors) {
+        if (document.querySelector(selector)) {
+          return selector;
+        }
+      }
+      return null;
+    });
+    
+    if (!usernameSelector) {
+      throw new Error('Could not find username input field - Instagram login page may have changed');
+    }
+    
+    console.log(`Found username selector: ${usernameSelector}`);
+    await page.waitForSelector(usernameSelector, { timeout: 30000 });
+    await page.type(usernameSelector, username, { delay: 20 });
+    
+    // Find password field
+    const passwordSelector = await page.evaluate(() => {
+      const selectors = [
+        'input[name="password"]',
+        'input[aria-label="Password"]',
+        'input[type="password"]'
+      ];
+      
+      for (const selector of selectors) {
+        if (document.querySelector(selector)) {
+          return selector;
+        }
+      }
+      return null;
+    });
+    
+    if (!passwordSelector) {
+      throw new Error('Could not find password input field');
+    }
+    
+    console.log(`Found password selector: ${passwordSelector}`);
+    await page.type(passwordSelector, password, { delay: 20 });
+    
+    // Find and click submit button
+    const submitClicked = await clickFirstMatching(page, [
+      'button[type="submit"]',
+      'button:contains("Log In")',
+      'button:contains("Log in")',
+      'input[type="submit"]'
+    ]);
+    
+    if (!submitClicked) {
+      throw new Error('Could not find login submit button');
+    }
+    
+    console.log('Login form submitted, waiting for navigation...');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // Check where we ended up after login
+    const postLoginUrl = page.url();
+    console.log('Post-login URL:', postLoginUrl);
+    
+    // If we're on the one-tap page, handle it
+    if (postLoginUrl.includes('/accounts/onetap/')) {
+      console.log('Redirected to one-tap page after login - handling it');
+      await handleOneTapPage(page);
+      return true;
+    }
+    
+    // Handle "Save login info" popup that appears after login
+    try {
+      console.log('Checking for save login info popup...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Brief wait for popup to appear
+      
+      const popupHandled = await page.evaluate(() => {
+        // Look for and handle various popup types
+        const selectors = [
+          'button:contains("Not Now")',
+          'button:contains("Not now")',
+          'button:contains("Save Info")',
+          'button:contains("Save info")',
+          'button:contains("Don\'t Save")',
+          'button:contains("Don\'t save")',
+          '[data-testid="save-login-info-dialog"] button',
+          'div[role="dialog"] button'
+        ];
+        
+        for (const selector of selectors) {
+          const button = document.querySelector(selector);
+          if (button) {
+            button.click();
+            return true;
+          }
+        }
+        
+        // Also try clicking any button that might be a popup dismiss
+        const buttons = document.querySelectorAll('button');
+        for (const button of buttons) {
+          const text = button.textContent?.toLowerCase() || '';
+          if (text.includes('not now') || text.includes('don\'t save') || text.includes('later')) {
+            button.click();
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (popupHandled) {
+        console.log('Handled save login info popup');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for popup to disappear
+      }
+    } catch (popupError) {
+      console.log('No popup found or popup handling failed:', popupError.message);
+    }
+    
+    // Verify login was successful
+    const loginSuccessful = await page.evaluate(() => {
+      const currentUrl = window.location.href;
+      console.log('Final verification URL:', currentUrl);
+      
+      // If we're on one-tap page, that means we're logged in
+      if (currentUrl.includes('/accounts/onetap/')) {
+        console.log('On one-tap page - login successful');
+        return true;
+      }
+      
+      // Look for specific logged-in elements
+      const loginIndicators = [
+        'nav a[href*="/accounts/edit/"]',
+        'a[href*="/accounts/edit/"]', 
+        '[data-testid="user-avatar"]',
+        'img[alt*="profile picture"]',
+        'a[href*="/accounts/activity/"]',
+        '[data-testid="AppTabBar_Profile_Link"]',
+        'a[href*="/direct/"]',
+        'svg[aria-label="Home"]',
+        'svg[aria-label="Search"]',
+        'svg[aria-label="New post"]'
+      ];
+      
+      let foundElements = [];
+      for (const selector of loginIndicators) {
+        const element = document.querySelector(selector);
+        if (element) {
+          foundElements.push(selector);
+        }
+      }
+      
+      console.log('Final verification - found login indicators:', foundElements);
+      
+      // Check if we still see login form (indicates NOT logged in)
+      const loginForm = document.querySelector('input[name="username"]') || 
+                       document.querySelector('input[type="text"][placeholder*="username"]');
+      
+      if (loginForm) {
+        console.log('Still see login form - login failed');
+        return false;
+      }
+      
+      // Need at least 1 strong login indicator
+      return foundElements.length >= 1;
+    });
+    
+    if (!loginSuccessful) {
+      throw new Error('Login failed - please check your credentials');
+    }
+    
+    console.log('Instagram login successful');
+    return true;
+  } catch (error) {
+    console.error('Instagram login error:', error);
+    throw new Error(`Instagram login error: ${error.message}`);
+  }
+}
+
+async function instagramLike(page, postUrl) {
+  console.log(`🚀 NEW CODE: instagramLike function called with URL: ${postUrl}`);
+  
+  // Check if this post has already been liked
+  if (likedPosts.has(postUrl)) {
+    console.log(`🚀 SKIPPING: Post ${postUrl} has already been liked`);
+    return true; // Return true to indicate "success" (already liked)
+  }
+  
+  await page.goto(postUrl, { waitUntil: 'networkidle2' });
+  
+  console.log(`🚀 NEW CODE: Page loaded, attempting to like post: ${postUrl}`);
+  
+  // Simple approach: just try to click the first like button we can find in the main content area
+  console.log('=== STARTING SIMPLE LIKE BUTTON DETECTION ===');
+  
+  const result = await page.evaluate(() => {
+    // Find all like buttons on the page
+    const likeButtons = document.querySelectorAll('svg[aria-label="Like"]');
+    const debugInfo = [];
+    
+    // Try to find the main post area first
+    const mainPostSelectors = [
+      'article',
+      '[role="main"]',
+      'main',
+      '.post',
+      '[data-testid="post"]'
+    ];
+    
+    let mainPostArea = null;
+    for (const selector of mainPostSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        mainPostArea = element;
+        break;
+      }
+    }
+    
+    for (let i = 0; i < likeButtons.length; i++) {
+      const likeButton = likeButtons[i];
+      const rect = likeButton.getBoundingClientRect();
+      
+      // Check if this like button is within the main post area
+      const isInMainPost = mainPostArea ? mainPostArea.contains(likeButton) : false;
+      
+      debugInfo.push({
+        index: i,
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        inMainContent: rect.x < 800,
+        inMainPost: isInMainPost
+      });
+      
+      // Click like buttons, prioritizing the first one (usually the main post)
+      if (rect.width > 0 && rect.height > 0) {
+        // Skip comment likes by checking if this is likely a comment like button
+        const isLikelyCommentLike = rect.width < 20 || rect.height < 20 || 
+                                   (likeButton.closest('ul') && likeButton.closest('li'));
+        
+        if (isLikelyCommentLike) {
+          continue; // Skip comment like buttons
+        }
+        
+        // Find the clickable parent element
+        const clickableParent = likeButton.closest('div[role="button"]') || 
+                               likeButton.closest('button') || 
+                               likeButton.parentElement;
+        
+        if (clickableParent) {
+          clickableParent.click();
+        } else {
+          likeButton.click();
+        }
+        
+        return { clicked: true, buttonIndex: i, debugInfo, inMainPost: isInMainPost, isCommentLike: isLikelyCommentLike };
+      }
+    }
+    
+    return { clicked: false, debugInfo };
+  });
+  
+  console.log(`Found ${result.debugInfo.length} like buttons:`, result.debugInfo);
+  
+  if (result.clicked) {
+    console.log(`Successfully clicked like button ${result.buttonIndex}`);
+    clicked = true;
+    
+    // Mark this post as liked to avoid duplicates
+    likedPosts.add(postUrl);
+    console.log(`🚀 MARKED AS LIKED: ${postUrl} (total liked: ${likedPosts.size})`);
+  } else {
+    console.log('No suitable like buttons found in main content area');
+    clicked = false;
+  }
+  
+  console.log(`=== SIMPLE LIKE DETECTION COMPLETED, RESULT: ${clicked} ===`);
+  
+  if (result.clicked) {
+    console.log(`Successfully clicked like button on ${postUrl}`);
+    
+    // Wait a moment and check if the like state changed
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const likeStateAfter = await page.evaluate(() => {
+      const likeButton = document.querySelector('article svg[aria-label="Unlike"]') || 
+                        document.querySelector('svg[aria-label="Unlike"]');
+      const unlikeButton = document.querySelector('article svg[aria-label="Like"]') || 
+                          document.querySelector('svg[aria-label="Like"]');
+      return {
+        hasUnlikeButton: !!likeButton, // If we see "Unlike", the post is liked
+        hasLikeButton: !!unlikeButton, // If we see "Like", the post is not liked
+      };
+    });
+    console.log(`Like state after click:`, likeStateAfter);
+  } else {
+    // Get debug info to include in error message
+    const debugInfo = await page.evaluate(() => {
+      const allLikes = document.querySelectorAll('svg[aria-label="Like"]');
+      const likeButtonDetails = [];
+      
+      for (let i = 0; i < allLikes.length; i++) {
+        const likeButton = allLikes[i];
+        const rect = likeButton.getBoundingClientRect();
+        likeButtonDetails.push({
+          index: i,
+          position: `${Math.round(rect.x)},${Math.round(rect.y)}`,
+          size: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+          inMainContent: rect.x < 800
+        });
+      }
+      
+      return {
+        totalLikes: allLikes.length,
+        likeButtonDetails
+      };
+    });
+    
+    console.log(`Could not find any like button on ${postUrl}`);
+    console.log('Debug info:', JSON.stringify(debugInfo, null, 2));
+    throw new Error(`Could not find Like button. Found ${debugInfo.totalLikes} total like buttons. Details: ${JSON.stringify(debugInfo.likeButtonDetails)}`);
+  }
+}
+
+async function instagramComment(page, postUrl, comment, username) {
+  console.log(`💬 ===== INSTAGRAM COMMENT START =====`);
+  console.log(`💬 POST: ${postUrl}`);
+  console.log(`💬 COMMENT: ${comment}`);
+  console.log(`💬 USERNAME: ${username}`);
+  
+  // Quick navigation optimization - only navigate if not already on post
+  const currentUrl = page.url();
+  const shortcode = postUrl.split('/p/')[1]?.split('/')[0] || postUrl.split('/reel/')[1]?.split('/')[0];
+  
+  if (!currentUrl.includes(shortcode)) {
+    console.log(`💬 NAVIGATING to post`);
+    await page.goto(postUrl, { waitUntil: 'domcontentloaded', timeout: 8000 });
+    // Quick wait for essential elements only
+    try {
+      await page.waitForSelector('article, main, [role="main"]', { timeout: 2000 });
+    } catch {
+      console.log('💬 Main content not found quickly, continuing...');
+    }
+  } else {
+    console.log(`💬 ALREADY ON POST`);
+  }
+  
+  console.log('💬 Page ready, attempting to comment');
+  
+  // CRITICAL: Double-check for existing comments before posting
+  console.log('💬 DOUBLE-CHECKING for existing comments before posting...');
+  const alreadyCommented = await hasMyCommentAndCache({
+    page,
+    username: username,
+    postUrl: postUrl,
+  });
+  
+  if (alreadyCommented) {
+    console.log('💬 ===== COMMENT SKIPPED =====');
+    console.log('💬 Already commented - double-check detected existing comment');
+    console.log('💬 ===== COMMENT SKIPPED =====');
+    return { skipped: true, reason: 'Already commented (double-check)' };
+  }
+  
+  console.log('💬 Double-check passed - no existing comment found, proceeding...');
+  
+  // Click the comment button to open the comment input
+  const commentButtonClicked = await clickFirstMatching(page, [
+    'svg[aria-label="Comment"]',
+    'span[aria-label="Comment"]',
+    'button svg[aria-label="Comment"]',
+    'button[aria-label="Comment"]',
+    'div[role="button"]:has(svg[aria-label="Comment"])',
+  ]);
+  
+  if (!commentButtonClicked) {
+    throw new Error('Could not find comment button');
+  }
+  
+  console.log('🎯 Comment button clicked, waiting for textarea');
+  
+  // Wait for the comment textarea to appear
+  await page.waitForSelector('textarea[aria-label="Add a comment…"]', { timeout: 15000 });
+  await new Promise(resolve => setTimeout(resolve, 500)); // Reduced delay
+  
+  // Type the comment using the Enter key method (more reliable)
+  console.log(`✍️  Typing comment: "${comment}"`);
+  
+  // Click the textarea first to ensure focus
+  await page.click('textarea[aria-label="Add a comment…"]');
+  await new Promise(resolve => setTimeout(resolve, 300)); // Reduced delay
+  
+  // Type with human-like delay to help React enable the button
+  await page.keyboard.type(comment, { delay: 25 }); // Slightly faster typing
+  await new Promise(resolve => setTimeout(resolve, 800)); // Reduced delay
+  
+  // Press Enter to post the comment
+  console.log('⏎ Posting comment...');
+  await page.keyboard.press('Enter');
+  
+  // Wait for the comment to be posted by checking DOM
+  console.log('⏳ Verifying comment posted...');
+  
+  // Reduced wait time for comment verification
+  await sleep(1500);
+  
+  const commentPosted = await page.evaluate((commentText) => {
+    // Look for the comment in multiple possible locations
+    const selectors = [
+      'span[dir="auto"]',
+      'div[dir="auto"]',
+      'span[data-testid="comment"]',
+      'div[data-testid="comment"]',
+      'article span',
+      'article div'
+    ];
+    
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        const text = element.textContent?.trim() || '';
+        // Check if the comment text appears in this element
+        if (text.includes(commentText.substring(0, Math.min(20, commentText.length)))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, comment);
+  
+  let posted = false;
+  if (commentPosted) {
+    console.log('✅ Comment verified in DOM');
+    posted = true;
+  } else {
+    console.log('⚠️  Comment not immediately visible, but may have posted');
+    // Don't fail immediately - Instagram sometimes delays showing comments
+    posted = true;
+  }
+  
+  if (!posted) {
+    throw new Error('Failed to post comment - Enter key method did not work');
+  }
+  
+  // After successful response, mark as commented so you never re-check the DOM for this post again.
+  await hasMyCommentAndCache({
+    page,
+    username: username,
+    postUrl: postUrl,
+    markCommented: true,
+  });
+  
+  console.log('💬 ===== COMMENT SUCCESS =====');
+  console.log('💬 Comment posted successfully');
+  console.log('💬 ===== COMMENT SUCCESS =====');
+  // Reduced delay - no need to wait long after posting
+  await new Promise(resolve => setTimeout(resolve, 800));
+  
+  return { success: true };
+}
 
 // X (Twitter) flows
 async function ensureXLoggedIn(page, { username, password }) {
@@ -1609,6 +2350,10 @@ async function clickBackToSearch(page, searchUrl, navigateNext = false) {
 // X Keyboard Navigation Auto-Comment System
 async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username }) {
   try {
+    console.log('🐦 Starting X auto-comment with keyboard navigation approach');
+    console.log(`🐦 Target: ${maxPosts} comments`);
+    console.log(`🐦 Search criteria: ${JSON.stringify(searchCriteria)}`);
+    
     const { hashtag, keywords } = searchCriteria;
     let searchTerm;
     
@@ -1622,11 +2367,7 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
     
     // Navigate to search and store URL for returning
     const searchUrl = `https://x.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`;
-    
-    console.log(`\n🎯 ACTION: Auto-commenting on X (Twitter)`);
-    console.log(`👤 ACCOUNT: ${username}`);
-    console.log(`🔍 SEARCH: ${searchTerm} (Target: ${maxPosts} comments)`);
-    
+    console.log(`🐦 Navigating to search: ${searchUrl}`);
     await page.goto(searchUrl, { waitUntil: 'networkidle2' });
     await sleep(3000); // Let search results load
     
@@ -1634,43 +2375,45 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
     let currentPost = 0;
     const results = [];
     
+    console.log('🐦 Starting keyboard navigation through search results...');
+    
     while (successfulComments < maxPosts && currentPost < 50) { // Reasonable safety limit to prevent infinite loops
       currentPost++;
+      console.log(`\n🐦 [${currentPost}] Processing post ${currentPost} (${successfulComments}/${maxPosts} completed)`);
       
       try {
-        // Navigate to next post
+        // Step 1: Use 'j' to advance to next result
         if (currentPost > 1) {
+          console.log('⌨️ Pressing "j" to advance to next post...');
           await page.keyboard.press('j');
           await sleep(500);
         } else {
+          console.log('⌨️ Pressing "j" to select first post...');
           await page.keyboard.press('j');
           await sleep(500);
         }
         
-        // Open the post
+        // Step 2: Use 'Enter' to open the post
+        console.log('⌨️ Pressing "Enter" to open post...');
         await page.keyboard.press('Enter');
         await sleep(3000); // Wait for post to load
         
-        // Extract post content first
-        const postContent = await page.evaluate(() => {
-          const tweetText = document.querySelector('[data-testid="tweetText"]');
-          return tweetText ? tweetText.textContent.trim() : 'Post content not found';
-        });
+        // Step 3: Check if my username has already commented
+        console.log(`🔍 Checking if ${username} has already commented...`);
         
-        console.log(`\n📄 POST ${currentPost}: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
-        
-        // Check if already commented
-        
-        // Check for existing comments
+        // Look specifically for reply tweets from our username in the thread
         const hasMyComment = await page.evaluate((username) => {
+          // Look for replies specifically from our username
           const replyElements = document.querySelectorAll('[data-testid="tweetText"]');
           let foundMyReply = false;
           
           replyElements.forEach(element => {
+            // Check if this tweet is from our username by looking at the parent structure
             const tweetContainer = element.closest('[data-testid="tweet"]');
             if (tweetContainer) {
               const usernameLink = tweetContainer.querySelector(`a[href="/${username}"]`);
               if (usernameLink) {
+                // Check if this is actually a reply (not the original tweet)
                 const isReply = tweetContainer.querySelector('[data-testid="reply"]') || 
                                tweetContainer.textContent.includes('Replying to');
                 if (isReply || tweetContainer !== replyElements[0]?.closest('[data-testid="tweet"]')) {
@@ -1680,11 +2423,15 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
             }
           });
           
+          console.log(`Found my reply: ${foundMyReply}`);
           return foundMyReply;
         }, username);
         
         if (hasMyComment) {
-          console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
+          console.log(`⏭️ ${username} has already commented on this post, skipping...`);
+          
+          // Step 4a: Click back arrow to return to search results (stay on search page)
+          console.log('🔙 Clicking back arrow to return to search results...');
           await clickBackToSearch(page, searchUrl, false);
           await sleep(2000);
           
@@ -1697,18 +2444,27 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           continue;
         }
         
-        console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
+        // Step 4b: No existing comment - proceed with commenting
+        console.log('✅ No existing comment found, proceeding to comment...');
         
-        // Generate comment
+        // Extract post content for AI if needed
         let finalComment = comment;
         if (useAI) {
+          console.log('🤖 Extracting post content for AI comment generation...');
+          const postContent = await page.evaluate(() => {
+            const tweetText = document.querySelector('[data-testid="tweetText"]');
+            return tweetText ? tweetText.textContent : 'Post content not found';
+          });
+          
+          console.log(`📝 Post content: "${postContent.slice(0, 100)}..."`);
+          // Generate AI comment (you'll need to implement this based on your existing AI logic)
           finalComment = await generateAIComment(postContent, await getSessionAssistantId('x', 'default'));
-          console.log(`🤖 AI COMMENT: "${finalComment}"`);
-        } else {
-          console.log(`💬 MANUAL COMMENT: "${finalComment}"`);
         }
         
-        // Click reply button
+        console.log(`💬 Commenting: "${finalComment.slice(0, 50)}..."`);
+        
+        // Click reply button using robust selector approach
+        console.log('🐦 Waiting for reply button...');
         await page.waitForSelector('[data-testid="reply"]', { timeout: 20000 });
         
         const replyClicked = await clickFirstMatching(page, [
@@ -1723,7 +2479,8 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         await sleep(2000); // Wait for reply dialog to open
         
-        // Find comment textarea
+        // Find and fill comment textarea using robust selector approach
+        console.log('🐦 Looking for comment textarea...');
         const textareaSelectors = [
           '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
           'div[data-testid="tweetTextarea_0"]',
@@ -1740,6 +2497,7 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
             await page.waitForSelector(selector, { timeout: 3000 });
             textareaElement = await page.$(selector);
             if (textareaElement) {
+              console.log(`✅ Found textarea with selector: ${selector}`);
               textareaFound = true;
               break;
             }
@@ -1752,25 +2510,31 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           throw new Error('Could not find comment textarea');
         }
         
-        // Clear and type comment
+        // Clear and focus textarea
         await textareaElement.click();
         await sleep(500);
+        
+        // Clear existing content and type comment
         await page.keyboard.down('Meta');
         await page.keyboard.press('a');
         await page.keyboard.up('Meta');
         await page.keyboard.press('Backspace');
         await sleep(200);
+        
+        // Type comment with proper delay
         await textareaElement.type(finalComment, { delay: 80 });
         await sleep(1000);
         
-        // Submit comment
-        await page.keyboard.down('Meta');
+        // Submit with Cmd+Enter (posts comment and closes box)
+        console.log('🐦 Submitting comment with Cmd+Enter...');
+        await page.keyboard.down('Meta'); // Cmd key on Mac
         await page.keyboard.press('Enter');
         await page.keyboard.up('Meta');
-        await sleep(3000);
+        
+        await sleep(3000); // Wait for comment to post
         
         successfulComments++;
-        console.log(`✅ COMPLETED: Comment posted successfully (${successfulComments}/${maxPosts})`);
+        console.log(`✅ Comment posted successfully! (${successfulComments}/${maxPosts} completed)`);
         
         results.push({ 
           post: currentPost, 
@@ -1778,7 +2542,8 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           comment: finalComment 
         });
         
-        // Return to search results
+        // Return to search results and navigate to next post
+        console.log('🔙 Clicking back arrow to return to search results and navigate to next...');
         await clickBackToSearch(page, searchUrl, true);
         await sleep(2000);
         
@@ -1789,9 +2554,10 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         }
         
       } catch (error) {
-        console.log(`❌ ERROR: ${error.message}`);
+        console.log(`❌ Error processing post ${currentPost}: ${error.message}`);
         
-        // Try to return to search results
+        // Try to return to search results (stay on search page for recovery)
+        console.log('🔙 Error recovery: Clicking back arrow to return to search results...');
         await clickBackToSearch(page, searchUrl, false);
         await sleep(2000);
         
@@ -1805,7 +2571,9 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
       }
     }
     
-    console.log(`\n🎉 FINAL RESULTS: ${successfulComments}/${maxPosts} comments posted`);
+    console.log(`\n📊 X Auto-Comment Complete!`);
+    console.log(`✅ Successfully commented on ${successfulComments}/${maxPosts} posts`);
+    console.log(`📝 Processed ${currentPost} total posts`);
     
     return {
       ok: true,
@@ -2048,8 +2816,643 @@ async function xCommentCurrentPage(page, comment) {
 // X function will be defined later in the file
 
 // Threads flows
-// ensureThreadsLoggedIn function moved to threads-functions.js
+async function ensureThreadsLoggedIn(page, { username, password }) {
+  try {
+    // 1) Go to Threads home (correct domain)
+    await page.goto('https://www.threads.net/', { waitUntil: 'networkidle2' });
+    await sleep(1000);
 
+    // 2) If already logged in, bail early
+    const already = await page.evaluate(() => {
+      console.log('🧵 Checking if already logged in...');
+      console.log('🧵 Current URL:', window.location.href);
+      console.log('🧵 Page title:', document.title);
+      
+      // Check for actual navigation elements that indicate we're logged in
+      const navSelectors = ['[aria-label="Home"]','[aria-label="Search"]','[aria-label="Activity"]','[aria-label="Profile"]'];
+      let foundNav = false;
+      for (const sel of navSelectors) {
+        const element = document.querySelector(sel);
+        if (element) {
+          console.log('🧵 Found nav element:', sel);
+          foundNav = true;
+          break;
+        }
+      }
+      
+      // Also check for login/signup buttons (indicates NOT logged in)
+      const loginButtons = document.querySelectorAll('button, a');
+      let hasLoginButtons = false;
+      for (const button of loginButtons) {
+        const text = button.textContent?.toLowerCase() || '';
+        if (text.includes('log in') || text.includes('sign up')) {
+          console.log('🧵 Found login button:', text.trim());
+          hasLoginButtons = true;
+          break;
+        }
+      }
+      
+      const loggedIn = foundNav && !hasLoginButtons;
+      console.log('🧵 Has nav elements:', foundNav);
+      console.log('🧵 Has login buttons:', hasLoginButtons);
+      console.log('🧵 Final determination - already logged in:', loggedIn);
+      
+      return loggedIn;
+    });
+    if (already) {
+      console.log('✅ Already logged into Threads');
+      return true;
+    }
+    
+    console.log('🔐 Not logged in - proceeding with login flow');
+
+    if (!username || !password) {
+      throw new Error('Threads session missing and no credentials provided. Provide username/password or login headfully and save a session.');
+    }
+
+    // 3) Click "Continue with Instagram" (the main login button)
+    console.log('🔐 Looking for Instagram login button...');
+    
+    // First, let's see what buttons are available
+    const availableButtons = await page.evaluate(() => {
+      const buttons = document.querySelectorAll('button, a, div[role="button"]');
+      const buttonInfo = [];
+      for (const btn of buttons) {
+        const text = (btn.textContent || '').trim();
+        const visible = btn.offsetParent !== null;
+        if (text && visible) {
+          buttonInfo.push({
+            text: text,
+            tagName: btn.tagName,
+            className: btn.className,
+            visible: visible
+          });
+        }
+      }
+      return buttonInfo;
+    });
+    
+    console.log('🔐 Available clickable elements:', availableButtons.filter(b => 
+      b.text.toLowerCase().includes('instagram') || 
+      b.text.toLowerCase().includes('continue') ||
+      b.text.toLowerCase().includes('log in')
+    ));
+    
+    // Try multiple methods to click the Instagram button
+    let instagramClicked = false;
+    
+    // Method 1: Try our existing text-based clicking
+    instagramClicked = await tryClickByText(page, [
+      'Continue with Instagram',
+      'Log in with Instagram',
+      'Instagram'
+    ]);
+    
+    if (!instagramClicked) {
+      // Method 2: Try direct selector approach
+      console.log('🔐 Text-based click failed, trying direct selectors...');
+      try {
+        const instagramButton = await page.$('button:has-text("Continue with Instagram")') ||
+                               await page.$('a:has-text("Continue with Instagram")') ||
+                               await page.$('[aria-label*="Instagram"]') ||
+                               await page.$('[data-testid*="instagram"]');
+        
+        if (instagramButton) {
+          await instagramButton.click();
+          instagramClicked = true;
+          console.log('🔐 Clicked Instagram button using direct selector');
+        }
+      } catch (error) {
+        console.log('🔐 Direct selector method failed:', error.message);
+      }
+    }
+    
+    if (!instagramClicked) {
+      // Method 3: Try coordinate-based clicking
+      console.log('🔐 Selector methods failed, trying coordinate-based clicking...');
+      try {
+        const buttonCoords = await page.evaluate(() => {
+          const buttons = document.querySelectorAll('button, a, div[role="button"]');
+          for (const btn of buttons) {
+            const text = (btn.textContent || '').trim().toLowerCase();
+            if (text.includes('continue with instagram') || text.includes('instagram')) {
+              const rect = btn.getBoundingClientRect();
+              return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                text: text
+              };
+            }
+          }
+          return null;
+        });
+        
+        if (buttonCoords) {
+          console.log('🔐 Found Instagram button at coordinates:', buttonCoords);
+          await page.mouse.click(buttonCoords.x, buttonCoords.y);
+          instagramClicked = true;
+          console.log('🔐 Clicked Instagram button using coordinates');
+        }
+      } catch (error) {
+        console.log('🔐 Coordinate-based clicking failed:', error.message);
+      }
+    }
+    
+    if (instagramClicked) {
+      console.log('🔐 Instagram button clicked successfully, waiting for navigation...');
+      try {
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+        console.log('🔐 Navigated to:', page.url());
+      } catch (navError) {
+        console.log('🔐 Navigation timeout, checking current URL:', page.url());
+      }
+    } else {
+      // Fallback to username option
+      console.log('🔐 All Instagram button click methods failed, trying username option...');
+      const usernameClicked = await tryClickByText(page, [
+        'Log in with username instead',
+        'Log in with username',
+        'Use username'
+      ]);
+      if (!usernameClicked) {
+        throw new Error('Could not find any working login button.');
+      }
+      console.log('🔐 Clicked username login, waiting for form...');
+      await sleep(2000);
+    }
+    
+    console.log('🔐 After login click, current URL:', page.url());
+    
+    // Check if we have username/password fields now
+    const hasLoginForm = await page.evaluate(() => {
+      const usernameField = document.querySelector('input[name="username"]');
+      const passwordField = document.querySelector('input[name="password"]');
+      console.log('🔐 Username field found:', !!usernameField);
+      console.log('🔐 Password field found:', !!passwordField);
+      return !!(usernameField && passwordField);
+    });
+    
+    if (!hasLoginForm) {
+      throw new Error('Could not find login form after clicking login options.');
+    }
+    
+    console.log('🔐 Login form is visible, proceeding with credentials...');
+
+    // Check if we need to navigate to Instagram or if we're already on a login form
+    console.log('🔐 Current URL after navigation:', page.url());
+    
+    if (!/instagram\.com/i.test(page.url()) && !page.url().includes('login')) {
+      // Try to follow any "Continue with Instagram" link on intermediate screens
+      const continueClicked = await tryClickByText(page, ['Instagram', 'Continue']);
+      if (continueClicked) {
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+      }
+    }
+
+    // 5) Fill credentials (works for both Instagram and Threads login forms)
+    console.log('🔐 Looking for username field...');
+    await page.waitForSelector('input[name="username"]', { timeout: 60000 });
+    console.log('🔐 Found username field, typing username...');
+    await page.type('input[name="username"]', username, { delay: 20 });
+
+    console.log('🔐 Looking for password field...');
+    await page.waitForSelector('input[name="password"]', { timeout: 60000 });
+    console.log('🔐 Found password field, typing password...');
+    await page.type('input[name="password"]', password, { delay: 20 });
+
+    // Submit
+    const loginSubmit = await page.$('button[type="submit"]');
+    if (loginSubmit) {
+      await loginSubmit.click();
+      console.log('🔐 Clicked Instagram login submit button');
+    } else {
+      // Try to find login button by text
+      const submitClicked = await tryClickByText(page, ['Log in', 'Log In']);
+      if (!submitClicked) {
+        throw new Error('Instagram login button not found.');
+      }
+      console.log('🔐 Clicked Instagram login button by text');
+    }
+
+    // 6) Wait for post-login navigation
+    await sleep(1500);
+
+    // 7) Wait for potential navigation after login (may not happen)
+    try {
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+      console.log('🔐 Navigation detected after login');
+    } catch (error) {
+      console.log('🔐 No navigation after login - checking current state...');
+    }
+    
+    console.log('🔐 After login submit, current URL:', page.url());
+    
+    // Handle post-login flow (may include save login info, OAuth consent, etc.)
+    await sleep(1000);
+    
+    // Handle "Save login info" / one-tap (no :contains selectors)
+    await tryClickByText(page, ['Not now', "Don't save", 'Skip', 'Later']);
+    
+    // Handle OAuth consent
+    await tryClickByText(page, ['Allow', 'Continue', 'Continue as', 'Yes, continue']);
+    
+    // Ensure we end up on Threads home
+    if (!/threads\.(net|com)/i.test(page.url())) {
+      console.log('🔐 Not on Threads, navigating to home...');
+      await page.goto('https://www.threads.net/', { waitUntil: 'networkidle2' });
+      await sleep(1000);
+    }
+
+    // Final verification
+    const ok = await page.evaluate(() => {
+      console.log('🔐 Final verification - checking for nav elements...');
+      const sel = ['[aria-label="Home"]','[aria-label="Search"]','[aria-label="Activity"]','[aria-label="Profile"]'];
+      let found = false;
+      for (const s of sel) {
+        if (document.querySelector(s)) {
+          console.log('🔐 Found nav element:', s);
+          found = true;
+          break;
+        }
+      }
+      console.log('🔐 Navigation elements found:', found);
+      return found;
+    });
+    
+    if (!ok) {
+      console.log('🔐 Login verification failed - nav elements not found');
+      throw new Error('Threads login failed - nav not visible.');
+    }
+
+    console.log('✅ Threads login successful');
+    return true;
+  } catch (error) {
+    console.error('Threads login error:', error);
+    throw new Error(`Threads login error: ${error.message}`);
+  }
+}
+
+async function threadsLike(page, threadUrl) {
+  console.log(`❤️ Attempting to like Threads post: ${threadUrl}`);
+  await page.goto(threadUrl, { waitUntil: 'networkidle2' });
+  await sleep(1000); // Wait for page to fully load
+  
+  // Try multiple selectors for the like button
+  const likeSelectors = [
+    '[data-testid="like"]',
+    '[data-testid="like-button"]',
+    '[aria-label*="Like"]',
+    '[aria-label*="like"]',
+    'button[aria-label*="Like"]',
+    'button[aria-label*="like"]',
+    'div[role="button"][aria-label*="Like"]',
+    'div[role="button"][aria-label*="like"]',
+    'svg[aria-label*="Like"]',
+    'svg[aria-label*="like"]'
+  ];
+  
+  let liked = false;
+  for (const selector of likeSelectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 2000 });
+      const element = await page.$(selector);
+      if (element) {
+        console.log(`✅ Found like button with selector: ${selector}`);
+        await element.click();
+        liked = true;
+        break;
+      }
+    } catch (error) {
+      // Continue to next selector
+      continue;
+    }
+  }
+  
+  if (!liked) {
+    // Try text-based clicking as fallback
+    const clicked = await tryClickByText(page, ['Like', 'like']);
+    if (clicked) {
+      console.log(`✅ Liked post using text-based clicking`);
+      liked = true;
+    }
+  }
+  
+  if (!liked) {
+    throw new Error('Could not find like button on Threads post');
+  }
+  
+  console.log(`✅ Successfully liked Threads post: ${threadUrl}`);
+  await sleep(500); // Brief pause after liking
+}
+
+async function threadsComment(page, threadUrl, comment) {
+  console.log(`💬 Attempting to comment on Threads post: ${threadUrl}`);
+  console.log(`💬 Comment text: "${comment}"`);
+  
+  await page.goto(threadUrl, { waitUntil: 'networkidle2' });
+  await sleep(1000); // Wait for page to fully load
+  
+  // Try multiple selectors for the reply button
+  const replySelectors = [
+    '[data-testid="reply"]',
+    '[data-testid="reply-button"]', 
+    '[aria-label*="Reply"]',
+    '[aria-label*="reply"]',
+    'button[aria-label*="Reply"]',
+    'button[aria-label*="reply"]',
+    'div[role="button"][aria-label*="Reply"]',
+    'div[role="button"][aria-label*="reply"]',
+    'svg[aria-label*="Reply"]',
+    'svg[aria-label*="reply"]'
+  ];
+  
+  console.log(`🔍 Looking for reply button...`);
+  let replyClicked = false;
+  for (const selector of replySelectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 2000 });
+      const element = await page.$(selector);
+      if (element) {
+        console.log(`✅ Found reply button with selector: ${selector}`);
+        console.log(`🖱️ Clicking reply button...`);
+        await element.click();
+        console.log(`✅ Reply button clicked successfully`);
+        replyClicked = true;
+        break;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  
+  if (!replyClicked) {
+    // Try text-based clicking as fallback
+    const clicked = await tryClickByText(page, ['Reply', 'reply']);
+    if (clicked) {
+      console.log(`✅ Clicked reply using text-based clicking`);
+      replyClicked = true;
+    }
+  }
+  
+  if (!replyClicked) {
+    throw new Error('Could not find reply button on Threads post');
+  }
+  
+  console.log(`⏳ Waiting for comment composer to appear...`);
+  await sleep(500); // Wait for composer to appear
+  
+  console.log(`🔍 Looking for comment textarea...`);
+  // Try multiple selectors for the comment textarea
+  const textareaSelectors = [
+    '[data-testid="threads-composer-textarea"]',
+    '[data-testid="composer-textarea"]',
+    'textarea[placeholder*="reply"]',
+    'textarea[placeholder*="Reply"]',
+    'textarea[aria-label*="reply"]',
+    'textarea[aria-label*="Reply"]',
+    'div[contenteditable="true"]',
+    'textarea',
+    '[role="textbox"]'
+  ];
+  
+  let textareaFound = false;
+  for (const selector of textareaSelectors) {
+    try {
+      await page.waitForSelector(selector, { timeout: 2000 });
+      const element = await page.$(selector);
+      if (element) {
+        console.log(`✅ Found comment textarea with selector: ${selector}`);
+        console.log(`⌨️ Starting to type comment: "${comment.slice(0, 50)}..."`);
+        
+        // Clear any existing text and type the comment
+        await element.click();
+        await page.keyboard.down('Control');
+        await page.keyboard.press('a');
+        await page.keyboard.up('Control');
+        await page.type(selector, comment, { delay: 50 });
+        console.log(`✅ Finished typing comment`);
+        textareaFound = true;
+        break;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+  
+  if (!textareaFound) {
+    throw new Error('Could not find comment textarea on Threads post');
+  }
+  
+  await sleep(500); // Brief pause after typing
+  
+  // Primary method: Use Cmd+Enter keyboard shortcut (more reliable)
+  console.log(`⌨️ Attempting to submit comment using Cmd+Enter shortcut...`);
+  let submitted = false;
+  
+  try {
+    await page.keyboard.down('Meta'); // Cmd key on Mac
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Meta');
+    console.log(`✅ Submitted comment using Cmd+Enter shortcut`);
+    submitted = true;
+  } catch (error) {
+    console.log(`⚠️ Cmd+Enter failed, trying button clicking: ${error.message}`);
+  }
+  
+  // Fallback: Try multiple selectors for the post/submit button
+  if (!submitted) {
+    console.log(`🔄 Trying button clicking as fallback...`);
+    const submitSelectors = [
+      '[data-testid="threads-composer-post-button"]',
+      '[data-testid="composer-post-button"]',
+      '[data-testid="post-button"]',
+      'button[aria-label*="Post"]',
+      'button[aria-label*="post"]',
+      'button[aria-label*="Reply"]',
+      'button[aria-label*="reply"]',
+      'div[role="button"][aria-label*="Post"]',
+      'div[role="button"][aria-label*="post"]'
+    ];
+    
+    for (const selector of submitSelectors) {
+      try {
+        const element = await page.$(selector);
+        if (element) {
+          console.log(`✅ Found submit button with selector: ${selector}`);
+          await element.click();
+          submitted = true;
+          break;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+  }
+  
+  // Final fallback: Try text-based clicking
+  if (!submitted) {
+    const clicked = await tryClickByText(page, ['Post', 'post', 'Reply', 'reply', 'Submit']);
+    if (clicked) {
+      console.log(`✅ Submitted comment using text-based clicking`);
+      submitted = true;
+    }
+  }
+  
+  if (!submitted) {
+    throw new Error('Could not submit comment - tried Cmd+Enter, button clicking, and text-based clicking');
+  }
+  
+  console.log(`✅ Successfully commented on Threads post: ${threadUrl}`);
+  await sleep(1000); // Wait for comment to be posted
+}
+
+async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
+  try {
+    console.log(`🔍 Discovering Threads posts with criteria: ${JSON.stringify(searchCriteria)}`);
+    
+    let searchTerm = '';
+    if (typeof searchCriteria === 'string') {
+      searchTerm = searchCriteria;
+    } else if (searchCriteria.hashtag) {
+      searchTerm = searchCriteria.hashtag;
+    } else if (searchCriteria.keywords) {
+      searchTerm = searchCriteria.keywords;
+    } else {
+      throw new Error('Invalid search criteria for Threads');
+    }
+    
+    // Remove # from hashtags since Threads search doesn't need it in the URL
+    searchTerm = searchTerm.replace(/^#/, '');
+
+    // Navigate to Threads search using correct URL format
+    const url = `https://www.threads.com/search?q=${encodeURIComponent(searchTerm)}&serp_type=default`;
+    console.log(`Navigating to Threads search: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    
+    // Wait for page to load and debug what's available
+    await sleep(3000);
+    
+    console.log('🔍 Debugging search results page...');
+    const pageInfo = await page.evaluate(() => {
+      const title = document.title;
+      const url = window.location.href;
+      
+      // Look for various post-related selectors
+      const selectors = [
+        '[data-testid="thread-post"]',
+        '[data-testid="post"]', 
+        'article',
+        '[role="article"]',
+        'div[data-pressable-container="true"]',
+        'a[href*="/post/"]',
+        'a[href*="/@"]'
+      ];
+      
+      const selectorResults = {};
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        selectorResults[selector] = elements.length;
+      }
+      
+      // Get sample links
+      const allLinks = Array.from(document.querySelectorAll('a[href]')).map(a => a.href);
+      const postLinks = allLinks.filter(href => href.includes('/post/') || href.includes('/@'));
+      
+      return {
+        title,
+        url,
+        selectorResults,
+        samplePostLinks: postLinks.slice(0, 5),
+        totalLinks: allLinks.length
+      };
+    });
+    
+    console.log('🔍 Page debug info:', pageInfo);
+    
+    // Try multiple selectors to find posts
+    let posts = [];
+    
+    // Method 1: Try original selector
+    try {
+      await page.waitForSelector('[data-testid="thread-post"]', { timeout: 10000 });
+      posts = await page.evaluate((maxPosts) => {
+        const postElements = document.querySelectorAll('[data-testid="thread-post"]');
+        const urls = [];
+        
+        for (const element of postElements) {
+          const linkElement = element.querySelector('a[href*="/post/"]');
+          if (linkElement) {
+            const href = linkElement.getAttribute('href');
+            if (href && !href.includes('#')) {
+              urls.push(href.startsWith('http') ? href : `https://www.threads.com${href}`);
+            }
+          }
+        }
+        
+        return urls.slice(0, maxPosts);
+      }, maxPosts);
+      
+      if (posts.length > 0) {
+        console.log('🔍 Found posts using thread-post selector:', posts.length);
+      }
+    } catch (error) {
+      console.log('🔍 thread-post selector failed:', error.message);
+    }
+    
+    // Method 2: Try alternative selectors if first method failed
+    if (posts.length === 0) {
+      console.log('🔍 Trying alternative selectors...');
+      posts = await page.evaluate((maxPosts) => {
+        const urls = [];
+        
+        // Try various approaches
+        const approaches = [
+          () => document.querySelectorAll('article'),
+          () => document.querySelectorAll('[role="article"]'),
+          () => document.querySelectorAll('div[data-pressable-container="true"]'),
+          () => document.querySelectorAll('a[href*="/post/"]')
+        ];
+        
+        for (const approach of approaches) {
+          const elements = approach();
+          console.log(`Trying approach, found ${elements.length} elements`);
+          
+          for (const element of elements) {
+            let linkElement = element.querySelector('a[href*="/post/"]');
+            if (!linkElement && element.tagName === 'A') {
+              linkElement = element;
+            }
+            
+            if (linkElement) {
+              const href = linkElement.getAttribute('href');
+              if (href && href.includes('/post/') && !href.includes('#')) {
+                const fullUrl = href.startsWith('http') ? href : `https://www.threads.com${href}`;
+                if (!urls.includes(fullUrl)) {
+                  urls.push(fullUrl);
+                }
+              }
+            }
+          }
+          
+          if (urls.length >= maxPosts) break;
+        }
+        
+        return urls.slice(0, maxPosts);
+      }, maxPosts);
+      
+      console.log('🔍 Found posts using alternative selectors:', posts.length);
+    }
+    
+    console.log(`🔍 Final result: Found ${posts.length} Threads posts`);
+    return posts.slice(0, maxPosts);
+    
+  } catch (error) {
+    console.error('Error discovering Threads posts:', error);
+    return [];
+  }
+}
+
+// Session management functions
 async function checkSessionStatus(page, platform, sessionName = 'default') {
   try {
     await loadSession(page, platform, sessionName);
@@ -2182,15 +3585,26 @@ export async function runAction(options) {
     likePost = false,
     assistantId,
   } = options;
+
+  console.log(`runAction called with action: ${action}, platform: ${platform}, sessionName: ${sessionName}`);
   
       // Clear tracking when starting a new action
   if (action === 'like' || action === 'comment' || action === 'auto-comment') {
-    // Note: Instagram tracking variables are now handled within instagram-functions.js
+    const prevLiked = likedPosts.size;
+    const prevDiscovered = discoveredPosts.size;
+    
+    if (action === 'like') {
+      likedPosts.clear();
+    }
+    discoveredPosts.clear(); // Always clear discovered posts for fresh search
     
     // Also clear comment cache for fresh testing
     if (platform === 'instagram') {
+      console.log(`🧹 Clearing comment cache for fresh testing...`);
       clearCommentCache();
     }
+    
+    console.log(`🚀 CLEARED TRACKING: Starting fresh ${action} session (cleared ${prevLiked} liked posts, ${prevDiscovered} discovered posts)`);
   }
 
   let browser;
@@ -2212,6 +3626,7 @@ export async function runAction(options) {
     const browserResult = await launchBrowser(headful);
     browser = browserResult.browser;
     page = browserResult.page;
+    console.log(`Browser and page ready. Headful: ${headful}, Action: ${action}`);
 
     // Handle logout action
     if (action === 'logout') {
@@ -2238,7 +3653,9 @@ export async function runAction(options) {
 
 
     // Load session and check login status
+    console.log(`Attempting to load session: ${sessionName} for platform: ${platform}`);
     const sessionLoaded = await loadSession(page, platform, sessionName);
+    console.log(`Session loading result: ${sessionLoaded}`);
     
     // Load comment cache statistics for Instagram
     if (platform === 'instagram') {
@@ -2315,34 +3732,43 @@ export async function runAction(options) {
       }
       
       if (action === 'auto-comment') {
+        console.log(`Auto-commenting on Instagram posts with criteria: ${JSON.stringify(searchCriteria)}`);
+
         const parsedCriteria = typeof searchCriteria === 'string'
           ? (searchCriteria.startsWith('#') ? { hashtag: searchCriteria } : { keywords: searchCriteria })
           : searchCriteria;
 
-        console.log(`\n🎯 ACTION: Auto-commenting on Instagram`);
-        console.log(`👤 ACCOUNT: ${username}`);
-        console.log(`🔍 SEARCH: ${JSON.stringify(parsedCriteria)} (Target: ${maxPosts} comments)`);
-
         const results = [];
-        const targetSuccesses = Math.max(1, Number(maxPosts) || 1);
+        const targetSuccesses = Math.max(1, Number(maxPosts) || 1);  // how many successful comments you want
         let successes = 0;
         let attempts = 0;
-        let consecutiveFailures = 0;
-        const seen = new Set(); // Instagram discovery tracking now handled in instagram-functions.js
-        let queue = await discoverInstagramPosts(page, parsedCriteria, Math.min(10, targetSuccesses * 2));
+        let consecutiveFailures = 0;  // Track consecutive failures to find new posts
+        const seen = new Set([...discoveredPosts]);                   // avoid picking same URLs again
+        let queue = await nextInstagramCandidates(page, parsedCriteria, seen, Math.min(10, targetSuccesses * 2));
+
+        console.log(`🎯 ===== COMMENT LOOP START =====`);
+        console.log(`🎯 TARGET: ${targetSuccesses} successful comments`);
+        console.log(`🎯 WILL CONTINUE SEARCHING until target is reached`);
+        console.log(`🎯 ===== COMMENT LOOP START =====`);
         
         while (successes < targetSuccesses) {
+          console.log(`🎯 LOOP CHECK: successes=${successes}/${targetSuccesses}, attempts=${attempts}, consecutiveFailures=${consecutiveFailures}`);
+          
           // Refill queue if empty or running low
           if (queue.length <= 1) {
-            const more = await discoverInstagramPosts(page, parsedCriteria, 15);
+            console.log(`🔄 Queue running low (${queue.length} posts) — discovering more candidates…`);
+            const more = await nextInstagramCandidates(page, parsedCriteria, seen, 15);
             if (more.length === 0) {
               consecutiveFailures++;
+              console.log(`⚠️  No new candidates found (failure ${consecutiveFailures})`);
               if (consecutiveFailures >= 3 && queue.length === 0) {
+                console.log('❌ Unable to find any new posts after 3 attempts, stopping.');
                 break;
               }
             } else {
-              consecutiveFailures = 0;
+              consecutiveFailures = 0; // Reset on successful discovery
               queue.push(...more);
+              console.log(`✅ Found ${more.length} new candidates, queue now has ${queue.length} posts`);
             }
           }
 
@@ -2351,53 +3777,68 @@ export async function runAction(options) {
           attempts++;
 
           try {
-            // Get post content for display
-            const postContent = await getPostContent(page, postUrl, platform);
-            console.log(`\n📄 POST ${attempts}: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
+            console.log(`🎯 Processing post ${attempts}/${targetSuccesses * 3}: ${postUrl} (successes: ${successes}/${targetSuccesses})`);
+            console.log(`🔍 Queue status: ${queue.length} posts remaining`);
             
-            // Check for duplicates
+            // Early duplicate check — skip without generating AI or navigating
+            console.log(`🔍 Checking if already commented (username: ${username})`);
             const already = await hasMyCommentAndCache({ page, username, postUrl });
             if (already) {
-              console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
+              console.log(`⏭️  SKIP: Already commented on this post → ${postUrl}`);
+              console.log(`🔄 Continuing search for new post to comment on...`);
               results.push({ url: postUrl, success: false, error: 'Already commented' });
-              attempts--;
-              continue;
+              // Don't increment attempts for skipped posts - just continue searching
+              attempts--; // Undo the increment since this wasn't a real attempt
+              continue; // Immediately move to next post in queue
             }
-            console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
+            console.log(`✅ No existing comment found, proceeding to comment on this post`);
             
-            // Generate comment
+
+            console.log(`📝 Getting post content for commenting...`);
+            const postContent = await getPostContent(page, postUrl, platform);
+            
             let aiComment;
             if (useAI) {
+              console.log(`🤖 Generating AI comment...`);
               const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
               aiComment = await generateAIComment(postContent, sessionAssistantId);
-              console.log(`🤖 AI COMMENT: "${aiComment}"`);
+              console.log(`🤖 AI comment: "${aiComment}"`);
             } else {
               aiComment = comment;
-              console.log(`💬 MANUAL COMMENT: "${aiComment}"`);
+              console.log(`💬 Using manual comment: "${aiComment}"`);
             }
 
             // Post the comment (this will re-check and skip if already commented)
             const commentResult = await instagramComment(page, postUrl, aiComment, username);
 
             if (commentResult.skipped) {
-              console.log(`⏭️ SKIPPED: ${commentResult.reason}`);
+              console.log(`⏭️  SKIPPED at posting stage: ${postUrl} - ${commentResult.reason}`);
               results.push({ url: postUrl, success: false, error: commentResult.reason });
             } else {
+              console.log(`✅ SUCCESS: commented on ${postUrl}`);
+              
               // Like the post if requested
               if (likePost) {
                 try {
+                  console.log(`❤️ Also liking post: ${postUrl}`);
                   await instagramLike(page, postUrl);
+                  console.log(`✅ Successfully liked post: ${postUrl}`);
                 } catch (likeError) {
+                  console.log(`⚠️ Failed to like post ${postUrl}: ${likeError.message}`);
                   // Don't fail the whole operation if like fails
                 }
               }
               
               results.push({ url: postUrl, success: true, comment: aiComment, liked: likePost });
               successes++;
-              console.log(`✅ COMPLETED: Comment posted successfully (${successes}/${targetSuccesses})`);
+              console.log(`🎯 PROGRESS: ${successes}/${targetSuccesses} successful comments`);
               
               // Check if we've reached our target
               if (successes >= targetSuccesses) {
+                console.log(`🎉 ===== TARGET REACHED! =====`);
+                console.log(`🎉 Successfully commented on ${successes} posts`);
+                console.log(`🎉 Breaking out of loop`);
+                console.log(`🎉 ===== TARGET REACHED! =====`);
                 break;
               }
             }
@@ -2405,13 +3846,17 @@ export async function runAction(options) {
             // Shorter delay between posts for better efficiency
             await new Promise(r => setTimeout(r, 1500 + Math.floor(Math.random() * 1000)));
           } catch (error) {
-            console.log(`❌ ERROR: ${error.message}`);
+            console.log(`❌ Error on ${postUrl}: ${error.message}`);
             results.push({ url: postUrl, success: false, error: error.message });
+            // Continue to next post without long delay
             await new Promise(r => setTimeout(r, 500));
           }
         }
 
-        console.log(`\n🎉 FINAL RESULTS: ${successes}/${targetSuccesses} comments posted`);
+        console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
+        if (successes < targetSuccesses) {
+          console.log(`⚠️  Did not reach target of ${targetSuccesses} comments. Reached limit of ${targetSuccesses * 3} attempts.`);
+        }
 
         return {
           ok: true,
@@ -2475,8 +3920,8 @@ export async function runAction(options) {
           let successes = 0;
           let attempts = 0;
           let consecutiveFailures = 0;  // Track consecutive failures to find new posts
-          const seen = new Set(); // Instagram discovery tracking now handled in instagram-functions.js
-          let queue = await discoverInstagramPosts(page, parsedCriteria, Math.min(10, targetSuccesses * 2));
+          const seen = new Set([...discoveredPosts]);                   // avoid picking same URLs again
+          let queue = await nextInstagramCandidates(page, parsedCriteria, seen, Math.min(10, targetSuccesses * 2));
 
           console.log(`🎯 TARGET: ${targetSuccesses} successful comments`);
           console.log(`🎯 WILL CONTINUE SEARCHING until target is reached`);
@@ -2484,7 +3929,7 @@ export async function runAction(options) {
             // Refill queue if empty or running low
             if (queue.length <= 1) {
               console.log(`🔄 Queue running low (${queue.length} posts) — discovering more candidates…`);
-              const more = await discoverInstagramPosts(page, parsedCriteria, 15);
+              const more = await nextInstagramCandidates(page, parsedCriteria, seen, 15);
               if (more.length === 0) {
                 consecutiveFailures++;
                 console.log(`⚠️  No new candidates found (failure ${consecutiveFailures})`);
@@ -2677,6 +4122,170 @@ export async function runAction(options) {
       return { ok: false, message: 'X functionality limited to login and auto-comment' };
     }
 
+    if (platform === 'threads') {
+      if (action === 'login') {
+        console.log(`📊 X Comment Cache: ${cacheStats.total} previously commented tweets`);
+        
+        // Step 1: Collect a large batch of tweets upfront
+        console.log(`\n🐦 === PHASE 1: COLLECTING TWEETS ===`);
+        const allTweets = await discoverXPostsBulk(page, searchCriteria, targetSuccesses * 10); // Collect 10x target to account for skips
+        
+        if (allTweets.length === 0) {
+          console.log(`⚠️ No tweets found in search results`);
+          return { ok: true, message: 'No tweets found to comment on', results: [] };
+        }
+        
+        console.log(`\n🐦 === PHASE 2: PROCESSING TWEETS ===`);
+        console.log(`🐦 Processing ${allTweets.length} collected tweets sequentially...`);
+        
+        // Step 2: Process tweets one by one until we reach target
+        for (const tweetUrl of allTweets) {
+          if (successes >= targetSuccesses) {
+            console.log(`🎯 Target reached! Stopping processing.`);
+            break;
+          }
+          attempts++;
+          console.log(`\n🐦 [${attempts}/${allTweets.length}] Processing: ${tweetUrl} (${successes}/${targetSuccesses} completed)`);
+          
+          try {
+            // Check if we should skip this tweet (duplicate detection)
+            const skipCheck = await xHasMyComment(page, tweetUrl, username);
+            if (skipCheck.skip) {
+              console.log(`⏭️ Skipping tweet (${skipCheck.reason}): ${tweetUrl}`);
+              results.push({ 
+                url: tweetUrl, 
+                success: false, 
+                skipped: true, 
+                reason: skipCheck.reason 
+              });
+              continue; // Skip to next tweet without counting as success
+            }
+            
+            // Extract post content for AI
+            console.log(`🐦 Extracting content for AI...`);
+            const postContent = await getPostContent(page, tweetUrl, platform);
+            console.log(`📝 Post content: "${postContent.slice(0, 100)}${postContent.length > 100 ? '...' : ''}"`);
+            
+            // Generate comment (AI or manual)
+            const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+            const finalComment = useAI ? 
+              await generateAIComment(postContent, sessionAssistantId) : 
+              comment;
+            
+            console.log(`💬 Generated comment: "${finalComment.slice(0, 100)}${finalComment.length > 100 ? '...' : ''}"`);
+            
+            // Navigate to the tweet page once
+            console.log(`🐦 Navigating to tweet: ${tweetUrl}`);
+            await page.goto(tweetUrl, { waitUntil: 'networkidle2' });
+            await sleep(2000); // Allow page to settle
+            
+            // Perform like FIRST if requested (more natural workflow)
+            if (likePost) {
+              console.log(`❤️ Attempting to like tweet first...`);
+              try {
+                await xLikeCurrentPage(page);
+                console.log(`✅ Tweet liked successfully`);
+              } catch (likeError) {
+                console.log(`⚠️ Like failed (continuing with comment): ${likeError.message}`);
+              }
+            }
+            
+            // Then comment on the post (already on the right page)
+            console.log(`💬 Posting comment...`);
+            const commentResult = await xCommentCurrentPage(page, finalComment);
+            
+            // Only add to cache if comment was actually successful
+            if (commentResult && commentResult.success) {
+              addToXCommentedCache(tweetUrl, 'commented');
+              console.log(`✅ Comment verified successful, added to cache`);
+            } else {
+              throw new Error('Comment did not complete successfully');
+            }
+            
+            successes++;
+            console.log(`✅ Comment posted successfully! (${successes}/${targetSuccesses} completed)`);
+            
+            results.push({ 
+              url: tweetUrl, 
+              success: true, 
+              comment: finalComment,
+              liked: likePost 
+            });
+            
+            // Break if we've reached our target
+            if (successes >= targetSuccesses) {
+              console.log(`🎯 Reached target of ${targetSuccesses} successful comments!`);
+              break;
+            }
+            
+            // Delay between successful comments
+            if (successes < targetSuccesses) {
+              console.log(`⏳ Waiting 3 seconds before next comment...`);
+              await sleep(3000);
+            }
+            
+          } catch (error) {
+            console.log(`❌ Error processing tweet ${tweetUrl}: ${error.message}`);
+            results.push({ url: tweetUrl, success: false, error: error.message });
+            
+            // Small delay before next attempt
+            await sleep(1000);
+          }
+        }
+
+        console.log(`📊 Final results: ${successes} successful comments out of ${attempts} attempts`);
+        console.log(`📊 Loop termination reason:`);
+        if (successes >= targetSuccesses) {
+          console.log(`✅ SUCCESS: Reached target of ${targetSuccesses} comments`);
+        } else {
+          console.log(`⚠️  NO MORE TWEETS: Exhausted search results without achieving ${targetSuccesses} successes`);
+        }
+
+        return {
+          ok: true,
+          message: `Commented on ${successes}/${targetSuccesses} tweets`,
+          results,
+          attempts,
+          cacheStats: {
+            ...cacheStats,
+            newEntries: successes
+          }
+        };
+      }
+
+      if (action === 'like') {
+        if (searchCriteria) {
+          // Bulk like from search results
+          const posts = await discoverXPosts(page, searchCriteria, maxPosts);
+          const results = [];
+          
+          for (const postUrl of posts) {
+            try {
+              await xLike(page, postUrl);
+              results.push({ url: postUrl, success: true });
+              await new Promise(resolve => setTimeout(resolve, 5000)); // Longer delay between likes to avoid detection
+            } catch (error) {
+              results.push({ url: postUrl, success: false, error: error.message });
+            }
+          }
+          
+          return { ok: true, message: `Liked ${results.filter(r => r.success).length} X posts`, results };
+        } else {
+          // Single post like
+          await xLike(page, url);
+        }
+      }
+      if (action === 'comment') {
+        const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+        const finalComment = useAI ? await generateAIComment('', sessionAssistantId) : comment;
+        await xComment(page, url, finalComment);
+      }
+      if (action === 'follow') {
+        await page.goto(url, { waitUntil: 'networkidle2' });
+        const followed = await clickFirstMatching(page, ['[data-testid$="follow"]']) || await clickByText(page, ['Follow']);
+        if (!followed) throw new Error('Could not find Follow button on X profile.');
+      }
+    }
 
     if (platform === 'threads') {
       if (action === 'login') {
@@ -2716,22 +4325,23 @@ export async function runAction(options) {
       }
       
       if (action === 'auto-comment') {
-        console.log(`\n🎯 ACTION: Auto-commenting on Threads`);
-        console.log(`👤 ACCOUNT: ${username}`);
-        console.log(`🔍 SEARCH: #${searchCriteria.hashtag || searchCriteria.keywords} (Target: ${maxPosts} comments)`);
-        
         const results = [];
         let attempts = 0;
-        const maxAttempts = maxPosts * 3;
+        const maxAttempts = maxPosts * 3; // Search up to 3x the target to find fresh posts
         let successfulComments = 0;
         const targetComments = maxPosts || 1;
         
+        console.log(`🎯 Target: ${targetComments} successful comments, Max search attempts: ${maxAttempts}`);
+        
         while (successfulComments < targetComments && attempts < maxAttempts) {
+          console.log(`🔍 Search iteration ${Math.floor(attempts / 10) + 1}, looking for fresh posts...`);
+          
           // Get a batch of posts to check
           const batchSize = Math.min(10, maxAttempts - attempts);
           const posts = await discoverThreadsPosts(page, searchCriteria, batchSize);
           
           if (posts.length === 0) {
+            console.log(`⚠️ No more posts found in search results`);
             break;
           }
           
@@ -2739,6 +4349,8 @@ export async function runAction(options) {
             attempts++;
             
             try {
+              console.log(`📝 Processing Threads post ${attempts}/${maxAttempts}: ${postUrl}`);
+              
               // Check if we've already commented on this post
               const alreadyCommented = await hasMyThreadsCommentAndCache({
                 page,
@@ -2748,223 +4360,32 @@ export async function runAction(options) {
               });
               
               if (alreadyCommented) {
-                console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
+                console.log(`⏭️  SKIP: Already commented on this Threads post → ${postUrl}`);
+                console.log(`🔄 Continuing search for fresh posts... (${successfulComments}/${targetComments} completed)`);
                 results.push({ url: postUrl, success: false, error: 'Already commented' });
-                continue;
+                continue; // Keep searching for fresh posts
               }
               
-              console.log(`✅ DUPLICATE CHECK: No existing comment → PROCEEDING`);
+              console.log(`✅ Fresh post found! Proceeding to comment (${successfulComments + 1}/${targetComments})`);
               
-              // Load post and extract content
-              await page.goto(postUrl, { waitUntil: 'networkidle2' });
-              await sleep(1000);
+              const postContent = await getPostContent(page, postUrl, platform);
               
-              // Extract the actual post content
-              const postContent = await page.evaluate(() => {
-                // Find the main post content by looking for the largest text block that isn't a username
-                const allElements = document.querySelectorAll('div[dir="auto"], span');
-                const candidates = [];
-                
-                for (const element of allElements) {
-                  const text = element.textContent?.trim();
-                  if (!text || text.length < 20) continue;
-                  
-                  // Skip if it's clearly UI or username
-                  if (text.match(/^@\w+$/)) continue; // Skip @username
-                  if (text.match(/^[A-Za-z0-9_]+$/)) continue; // Skip plain usernames
-                  if (text === 'Follow') continue;
-                  if (text === 'Reply') continue;
-                  if (text === 'Like') continue;
-                  if (text === 'Share') continue;
-                  if (text.includes('Verified')) continue;
-                  if (text.match(/^\d+[smh]$/)) continue; // Skip timestamps
-                  
-                  // Must contain spaces (be a sentence)
-                  if (!text.includes(' ')) continue;
-                  
-                  candidates.push({
-                    text: text,
-                    length: text.length,
-                    hasHashtags: /#\w+/.test(text),
-                    hasEmojis: /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(text)
-                  });
-                }
-                
-                if (candidates.length === 0) {
-                  return 'No post content found';
-                }
-                
-                // Sort by likely post content (longer text, has hashtags/emojis)
-                candidates.sort((a, b) => {
-                  let scoreA = a.length;
-                  let scoreB = b.length;
-                  if (a.hasHashtags) scoreA += 100;
-                  if (b.hasHashtags) scoreB += 100;
-                  if (a.hasEmojis) scoreA += 50;
-                  if (b.hasEmojis) scoreB += 50;
-                  return scoreB - scoreA;
-                });
-                
-                return candidates[0].text;
-              });
-              
-              console.log(`\n📄 POST: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
-              
-              if (postContent === 'No post content found') {
-                console.log(`❌ ERROR: Could not extract post content`);
-                results.push({ url: postUrl, success: false, error: 'Content extraction failed' });
-                continue;
-              }
-              
-              // Generate comment
               let aiComment;
               if (useAI) {
+                              console.log(`🤖 Generating AI comment for extracted content...`);
+              console.log(`📄 Post content preview: "${postContent.slice(0, 100)}..."`);
+              const startTime = Date.now();
               const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
               aiComment = await generateAIComment(postContent, sessionAssistantId);
-                console.log(`🤖 AI COMMENT: "${aiComment}"`);
+              const duration = Date.now() - startTime;
+              console.log(`🤖 AI comment generated in ${duration}ms: "${aiComment}"`);
               } else {
                 aiComment = comment;
-                console.log(`💬 MANUAL COMMENT: "${aiComment}"`);
+                console.log(`💬 Using manual comment: "${aiComment}"`);
               }
               
-              // Like the post first if requested (on the already-loaded page)
-              if (likePost) {
-                try {
-                  // Check if already liked (on current page)
-                  const alreadyLiked = await page.evaluate(() => {
-                    const likeButtons = document.querySelectorAll('[aria-label*="Like"], [data-testid*="like"]');
-                    for (const btn of likeButtons) {
-                      if (btn.getAttribute('aria-label')?.includes('Unlike') || 
-                          btn.classList.contains('liked') ||
-                          btn.style.color === 'rgb(255, 0, 0)') {
-                        return true;
-                      }
-                    }
-                    return false;
-                  });
-                  
-                  if (alreadyLiked) {
-                    console.log(`⏭️  SKIP LIKE: Post already liked → ${postUrl}`);
-                  } else {
-                    console.log(`❤️ Liking post (on current page): ${postUrl}`);
-                    
-                    // Like on current page without reloading
-                    const likeSelectors = ['[aria-label="Like"]', '[data-testid*="like"]', 'button[aria-label*="Like"]'];
-                    let liked = false;
-                    
-                    for (const selector of likeSelectors) {
-                      try {
-                        const likeButton = await page.$(selector);
-                        if (likeButton) {
-                          await likeButton.click();
-                          console.log(`✅ Liked post using selector: ${selector}`);
-                          liked = true;
-                          await sleep(500); // Brief pause after liking
-                          break;
-                        }
-                      } catch (error) {
-                        continue;
-                      }
-                    }
-                    
-                    if (!liked) {
-                      console.log(`⚠️ Could not find like button on current page`);
-                    }
-                  }
-                } catch (likeError) {
-                  console.log(`⚠️ Failed to like post ${postUrl}: ${likeError.message}`);
-                  // Don't fail the whole operation if like fails
-                }
-              }
-              
-              // Comment on the already-loaded page
-              console.log(`💬 Starting comment process (on current page): ${postUrl}`);
-              try {
-                // Look for reply button on current page
-                const replySelectors = ['[aria-label="Reply"]', '[data-testid*="reply"]', 'button[aria-label*="reply"]'];
-                let replyClicked = false;
-                
-                for (const selector of replySelectors) {
-                  try {
-                    const replyButton = await page.$(selector);
-                    if (replyButton) {
-                      await replyButton.click();
-                      console.log(`✅ Reply button clicked using selector: ${selector}`);
-                      replyClicked = true;
-                      break;
-                    }
-                  } catch (error) {
-                    continue;
-                  }
-                }
-                
-                if (!replyClicked) {
-                  throw new Error('Could not find or click reply button on current page');
-                }
-                
-                await sleep(2000); // Wait for comment box to appear
-                
-                // Look for comment text area
-                const textareaSelectors = [
-                  'textarea[placeholder*="reply"]',
-                  'textarea[placeholder*="comment"]', 
-                  'div[contenteditable="true"]',
-                  'textarea'
-                ];
-                
-                let commented = false;
-                for (const selector of textareaSelectors) {
-                  try {
-                    const textarea = await page.$(selector);
-                    if (textarea) {
-                      await textarea.click();
-                      await textarea.type(aiComment, { delay: 50 });
-                      console.log(`✅ Comment typed using selector: ${selector}`);
-                      
-                      // Submit comment
-                      const submitSelectors = ['button[type="submit"]', '[data-testid*="post"]', 'button[aria-label*="post"]'];
-                      let submitted = false;
-                      
-                      for (const submitSelector of submitSelectors) {
-                        try {
-                          const submitButton = await page.$(submitSelector);
-                          if (submitButton) {
-                            await submitButton.click();
-                            console.log(`✅ Comment submitted using selector: ${submitSelector}`);
-                            submitted = true;
-                            break;
-                          }
-                        } catch (error) {
-                          continue;
-                        }
-                      }
-                      
-                      if (!submitted) {
-                        // Try keyboard shortcut
-                        await page.keyboard.down('Meta');
-                        await page.keyboard.press('Enter');
-                        await page.keyboard.up('Meta');
-                        console.log('✅ Comment submitted using Cmd+Enter');
-                      }
-                      
-                      commented = true;
-                      break;
-                    }
-                  } catch (error) {
-                    continue;
-                  }
-                }
-                
-                if (!commented) {
-                  throw new Error('Could not find comment textarea on current page');
-                }
-                
-                await sleep(2000); // Wait for comment to post
-                console.log('✅ Comment posted successfully on current page');
-                
-              } catch (commentError) {
-                throw new Error(`Comment failed: ${commentError.message}`);
-              }
+              console.log(`💬 Starting comment process for: ${postUrl}`);
+              await threadsComment(page, postUrl, aiComment);
               
               // Mark as commented after successful comment
               await hasMyThreadsCommentAndCache({
@@ -2974,12 +4395,31 @@ export async function runAction(options) {
                 markCommented: true
               });
               
+              // Like the post if requested
+              if (likePost) {
+                try {
+                  // Check if already liked
+                  const alreadyLiked = await hasMyThreadsLike(page, username);
+                  if (alreadyLiked) {
+                    console.log(`⏭️  SKIP LIKE: Post already liked → ${postUrl}`);
+                  } else {
+                    console.log(`❤️ Also liking Threads post: ${postUrl}`);
+                    await threadsLike(page, postUrl);
+                    console.log(`✅ Successfully liked Threads post: ${postUrl}`);
+                  }
+                } catch (likeError) {
+                  console.log(`⚠️ Failed to like Threads post ${postUrl}: ${likeError.message}`);
+                  // Don't fail the whole operation if like fails
+                }
+              }
+              
               results.push({ url: postUrl, success: true, comment: aiComment });
               successfulComments++;
               
-              console.log(`✅ COMPLETED: Comment posted successfully (${successfulComments}/${targetComments})`);
+              console.log(`🎉 Successfully commented! Progress: ${successfulComments}/${targetComments}`);
               
               if (successfulComments >= targetComments) {
+                console.log(`🎯 Target reached! Completed ${successfulComments} comments`);
                 break; // Target reached, exit inner loop
               }
               
@@ -2996,13 +4436,15 @@ export async function runAction(options) {
           }
         }
         
-        console.log(`\n🎉 FINAL RESULTS: ${successfulComments}/${targetComments} comments posted`);
+        const finalMessage = successfulComments > 0 
+          ? `Auto-commented on ${successfulComments} posts (searched ${attempts} posts total)`
+          : `No fresh posts found to comment on (searched ${attempts} posts, all were already commented)`;
           
         return { 
           ok: true, 
-          message: `Auto-commented on ${successfulComments} posts (searched ${attempts} posts total)`, 
+          message: finalMessage, 
           results,
-          attempts: successfulComments
+          attempts: successfulComments // For UI display
         };
       }
 
@@ -3212,348 +4654,3 @@ export async function runAction(options) {
 }
 
 
-// ===== BLUESKY FUNCTIONS =====
-
-async function ensureBlueskyLoggedIn(page, { username, password }) {
-  console.log('🦋 Checking Bluesky login status...');
-  try {
-    await page.goto('https://bsky.app/', { waitUntil: 'networkidle2' });
-    await sleep(3000);
-    
-    // First check if already logged in
-    const isLoggedIn = await page.evaluate(() => {
-      const composeButton = document.querySelector('[aria-label*="Compose"]') || 
-                           document.querySelector('[data-testid*="compose"]');
-      const userMenu = document.querySelector('[aria-label*="Profile"]') || 
-                      document.querySelector('[data-testid*="profile"]');
-      return !!(composeButton || userMenu);
-    });
-    
-    if (isLoggedIn) {
-      console.log('✅ Already logged into Bluesky');
-      return true;
-    }
-    
-    console.log('🔐 Need to login - looking for first post to trigger login modal...');
-    
-    // Look for the first post's like button on the home screen
-    const likeSelectors = [
-      '[aria-label*="Like"]',
-      '[data-testid*="like"]', 
-      'button[aria-label*="like"]',
-      '[role="button"][aria-label*="Like"]'
-    ];
-    
-    let likeButton = null;
-    for (const selector of likeSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 3000 });
-        likeButton = await page.$(selector);
-        if (likeButton) {
-          console.log(`🎯 Found like button with selector: ${selector}`);
-          break;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!likeButton) {
-      throw new Error('Could not find any like button on the home screen to trigger login modal');
-    }
-    
-    // Click the like button to trigger the login modal
-    console.log('👆 Clicking like button to trigger login modal...');
-    await likeButton.click();
-    await sleep(2000);
-    
-    // Look for the "Sign in" button in the modal
-    const signInSelectors = [
-      'button:contains("Sign in")',
-      '[data-testid*="signIn"]',
-      '[aria-label*="Sign in"]',
-      'button[type="button"]:contains("Sign in")'
-    ];
-    
-    let signInButton = null;
-    for (const selector of signInSelectors) {
-      try {
-        if (selector.includes(':contains')) {
-          // Use page.evaluate for text-based selectors
-          signInButton = await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.find(btn => btn.textContent.toLowerCase().includes('sign in'));
-          });
-          if (signInButton) {
-            signInButton = await page.evaluateHandle(() => {
-              const buttons = Array.from(document.querySelectorAll('button'));
-              return buttons.find(btn => btn.textContent.toLowerCase().includes('sign in'));
-            });
-            console.log('🎯 Found Sign in button by text content');
-            break;
-          }
-        } else {
-          await page.waitForSelector(selector, { timeout: 3000 });
-          signInButton = await page.$(selector);
-          if (signInButton) {
-            console.log(`🎯 Found Sign in button with selector: ${selector}`);
-            break;
-          }
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!signInButton) {
-      throw new Error('Could not find Sign in button in the modal');
-    }
-    
-    // Click the Sign in button
-    console.log('👆 Clicking Sign in button...');
-    await signInButton.click();
-    await sleep(3000); // Give more time for the modal to fully appear
-    
-    // Use Tab + Enter sequence directly without removing focus
-    console.log('⌨️ Using Tab + Enter to open login fields (without removing focus)...');
-    
-    // Debug: Check what element has focus before Tab
-    const focusedElementBefore = await page.evaluate(() => {
-      const focused = document.activeElement;
-      return {
-        tagName: focused?.tagName,
-        textContent: focused?.textContent?.trim(),
-        className: focused?.className,
-        id: focused?.id
-      };
-    });
-    console.log('🔍 Focused element before Tab:', JSON.stringify(focusedElementBefore));
-    
-    // Now use Tab + Enter sequence with detailed logging
-    console.log('⌨️ Pressing Tab key...');
-    await page.keyboard.press('Tab');
-    await sleep(1000);
-    
-    // Debug: Check what element has focus after Tab
-    const focusedElementAfter = await page.evaluate(() => {
-      const focused = document.activeElement;
-      return {
-        tagName: focused?.tagName,
-        textContent: focused?.textContent?.trim(),
-        className: focused?.className,
-        id: focused?.id
-      };
-    });
-    console.log('🔍 Focused element after Tab:', JSON.stringify(focusedElementAfter));
-    
-    console.log('⌨️ Pressing Enter key...');
-    await page.keyboard.press('Enter');
-    await sleep(3000); // Give time for login fields to appear
-    
-    console.log('✅ Keyboard sequence completed, checking for login fields...');
-    
-    // Now look for and fill the login form
-    console.log('📝 Looking for login form fields after keyboard navigation...');
-    
-    // Find username/email field
-    const usernameSelectors = [
-      'input[type="text"]',
-      'input[type="email"]',
-      'input[name*="identifier"]', 
-      'input[name*="username"]',
-      'input[name*="email"]',
-      'input[name*="handle"]',
-      'input[placeholder*="handle"]',
-      'input[placeholder*="email"]',
-      'input[placeholder*="username"]',
-      'input[autocomplete="username"]',
-      'input[autocomplete="email"]',
-      'input:not([type="password"]):not([type="hidden"]):not([type="submit"])'
-    ];
-    
-    let usernameField = null;
-    for (const selector of usernameSelectors) {
-      try {
-        await page.waitForSelector(selector, { timeout: 3000 });
-        usernameField = await page.$(selector);
-        if (usernameField) {
-          console.log(`📧 Found username field with selector: ${selector}`);
-          break;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!usernameField) {
-      throw new Error('Could not find username/email field in login form');
-    }
-    
-    await usernameField.click();
-    await usernameField.type(username);
-    console.log(`✅ Entered username: ${username}`);
-    
-    // Find password field
-    const passwordField = await page.waitForSelector('input[type="password"]', { timeout: 5000 });
-    if (!passwordField) {
-      throw new Error('Could not find password field in login form');
-    }
-    
-    await passwordField.click();
-    await passwordField.type(password);
-    console.log('✅ Entered password');
-    
-    // Find and click the login submit button
-    const submitSelectors = [
-      'button[type="submit"]',
-      'button:contains("Sign in")',
-      'button:contains("Log in")',
-      '[data-testid*="submit"]'
-    ];
-    
-    let submitButton = null;
-    for (const selector of submitSelectors) {
-      try {
-        if (selector.includes(':contains')) {
-          submitButton = await page.evaluateHandle(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.find(btn => 
-              btn.textContent.toLowerCase().includes('sign in') || 
-              btn.textContent.toLowerCase().includes('log in')
-            );
-          });
-          if (submitButton) {
-            console.log('🎯 Found submit button by text content');
-            break;
-          }
-        } else {
-          await page.waitForSelector(selector, { timeout: 3000 });
-          submitButton = await page.$(selector);
-          if (submitButton) {
-            console.log(`🎯 Found submit button with selector: ${selector}`);
-            break;
-          }
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    if (!submitButton) {
-      throw new Error('Could not find login submit button');
-    }
-    
-    // Click login submit button
-    console.log('🚀 Submitting login form...');
-    await submitButton.click();
-    await sleep(4000); // Give it time to process login
-    
-    // Verify login success
-    const loginSuccess = await page.evaluate(() => {
-      const composeButton = document.querySelector('[aria-label*="Compose"]') || 
-                           document.querySelector('[data-testid*="compose"]');
-      const userMenu = document.querySelector('[aria-label*="Profile"]') || 
-                      document.querySelector('[data-testid*="profile"]');
-      return !!(composeButton || userMenu);
-    });
-    
-    if (loginSuccess) {
-      console.log('✅ Bluesky login successful');
-      return true;
-    } else {
-      throw new Error('Login appeared to fail - compose button not found after login attempt');
-    }
-    
-  } catch (error) {
-    console.error('❌ Bluesky login error:', error.message);
-    throw new Error(`Bluesky login error: ${error.message}`);
-  }
-}
-
-async function blueskyLike(page, postUrl) {
-  console.log(`❤️ Attempting to like Bluesky post: ${postUrl}`);
-  await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await sleep(1000);
-  
-  const likeSelectors = ['[aria-label*="Like"]', '[data-testid*="like"]', 'button[aria-label*="like"]'];
-  
-  for (const selector of likeSelectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 2000 });
-      const element = await page.$(selector);
-      if (element) {
-        await element.click();
-        console.log('✅ Bluesky post liked successfully!');
-        return { success: true };
-      }
-    } catch (error) {
-      continue;
-    }
-  }
-  
-  throw new Error('Could not find like button on Bluesky post');
-}
-
-async function blueskyComment(page, postUrl, comment) {
-  console.log(`💬 Attempting to comment on Bluesky post: ${postUrl}`);
-  await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await sleep(1000);
-  
-  try {
-    // Look for reply button
-    const replyButton = await page.waitForSelector('[aria-label*="Reply"], [data-testid*="reply"], button[aria-label*="reply"]', { timeout: 5000 });
-    await replyButton.click();
-    await sleep(1000);
-    
-    // Look for comment textarea
-    const textarea = await page.waitForSelector('textarea, [contenteditable="true"]', { timeout: 5000 });
-    await textarea.click();
-    await textarea.type(comment);
-    await sleep(1000);
-    
-    // Look for submit button
-    const submitButton = await page.waitForSelector('button[type="submit"], [data-testid*="post"], [aria-label*="Post"]', { timeout: 5000 });
-    await submitButton.click();
-    
-    console.log('✅ Bluesky comment posted successfully!');
-    return { success: true };
-    
-  } catch (error) {
-    console.error('❌ Bluesky comment error:', error.message);
-    throw new Error(`Bluesky comment error: ${error.message}`);
-  }
-}
-
-async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
-  console.log(`🦋 Starting Bluesky post discovery`);
-  
-  const { hashtag, keywords } = searchCriteria;
-  let searchQuery = hashtag || keywords;
-  
-  if (!searchQuery) {
-    throw new Error('Either hashtag or keywords must be provided');
-  }
-  
-  const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(searchQuery)}`;
-  console.log(`🔍 Navigating to: ${searchUrl}`);
-  await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-  await sleep(3000);
-  
-  const posts = await page.evaluate(() => {
-    const postElements = document.querySelectorAll('a[href*="/post/"]');
-    const urls = [];
-    
-    postElements.forEach(element => {
-      const href = element.getAttribute('href');
-      if (href && href.includes('/post/')) {
-        const fullUrl = href.startsWith('http') ? href : `https://bsky.app${href}`;
-        urls.push(fullUrl);
-      }
-    });
-    
-    return [...new Set(urls)];
-  });
-  
-  console.log(`🦋 Found ${posts.length} potential Bluesky posts`);
-  return posts.slice(0, maxPosts);
-}
