@@ -3209,14 +3209,14 @@ export async function runAction(options) {
           return { ok: false, message: 'Search criteria (hashtag or keywords) required for auto-comment' };
         }
 
-        const maxPosts = parseInt(maxPostsParam) || 3;
-        const targetSuccesses = maxPosts;
+        const maxPostsToProcess = parseInt(maxPosts) || 3;
+        const targetSuccesses = maxPostsToProcess;
         console.log(`🎯 Target: ${targetSuccesses} successful comments`);
 
         try {
           // Discover posts
           console.log('🔍 Discovering Bluesky posts...');
-          const discoveredPosts = await discoverBlueskyPosts(page, searchCriteria, maxPosts * 2);
+          const discoveredPosts = await discoverBlueskyPosts(page, searchCriteria, maxPostsToProcess * 2);
           
           if (discoveredPosts.length === 0) {
             return { ok: true, message: 'No Bluesky posts found for the given criteria', results: [] };
