@@ -3443,28 +3443,45 @@ export async function runAction(options) {
           let successCount = 0;
           let processedPosts = new Set(); // Track processed posts to avoid duplicates
           let discoveryAttempts = 0;
-          const maxDiscoveryAttempts = 10; // Prevent infinite loops
+          let consecutiveEmptyDiscoveries = 0;
+          const maxConsecutiveEmpty = 3; // Only stop after 3 consecutive empty discoveries
 
-          while (successCount < targetSuccesses && discoveryAttempts < maxDiscoveryAttempts) {
+          // Continue until target reached - no arbitrary limits on search attempts
+          while (successCount < targetSuccesses) {
             discoveryAttempts++;
-            console.log(`🔍 Discovery attempt ${discoveryAttempts}: Looking for posts...`);
+            console.log(`🔍 Discovery attempt ${discoveryAttempts}: Searching for posts (${successCount}/${targetSuccesses} comments completed)...`);
             
-            // Discover more posts (get more than we need to account for skips)
-            const batchSize = Math.max(10, (targetSuccesses - successCount) * 3);
+            // Discover more posts - increase batch size as we go to find more posts
+            const batchSize = Math.max(20, (targetSuccesses - successCount) * 5);
             const discoveredPosts = await discoverBlueskyPosts(page, searchCriteria, batchSize);
             
             if (discoveredPosts.length === 0) {
-              console.log('❌ No more posts found in this discovery attempt');
-              break; // No more posts available
+              consecutiveEmptyDiscoveries++;
+              console.log(`❌ No posts found in discovery attempt ${discoveryAttempts} (${consecutiveEmptyDiscoveries}/${maxConsecutiveEmpty} consecutive empty)`);
+              
+              if (consecutiveEmptyDiscoveries >= maxConsecutiveEmpty) {
+                console.log(`⚠️ Stopping search after ${maxConsecutiveEmpty} consecutive empty discoveries - no more posts available`);
+                break;
+              }
+              
+              // Wait longer before next attempt when no posts found
+              console.log('⏳ Waiting before retry...');
+              await sleep(5000);
+              continue;
             }
+
+            // Reset consecutive empty counter when we find posts
+            consecutiveEmptyDiscoveries = 0;
 
             // Filter out posts we've already processed
             const newPosts = discoveredPosts.filter(url => !processedPosts.has(url));
             console.log(`📊 Found ${discoveredPosts.length} posts, ${newPosts.length} new posts to process`);
 
             if (newPosts.length === 0) {
-              console.log('⚠️ All discovered posts have already been processed');
-              break; // No new posts to process
+              console.log('⚠️ All discovered posts have already been processed, searching for more...');
+              // Don't break here - continue searching for more posts
+              await sleep(3000);
+              continue;
             }
 
             // Process new posts
@@ -3526,7 +3543,7 @@ export async function runAction(options) {
                 await sleep(3000);
               }
 
-              } catch (error) {
+            } catch (error) {
                 console.log(`❌ Error processing post: ${error.message}`);
                 results.push({ 
                   url: postUrl, 
@@ -3544,10 +3561,8 @@ export async function runAction(options) {
             }
 
             // Small delay between discovery attempts
-            if (discoveryAttempts < maxDiscoveryAttempts) {
-              console.log('⏳ Brief pause before next discovery attempt...');
-              await sleep(2000);
-            }
+            console.log('⏳ Brief pause before next discovery attempt...');
+            await sleep(2000);
           }
 
           const message = `Bluesky auto-comment completed: ${successCount}/${targetSuccesses} successful comments`;
