@@ -3216,17 +3216,44 @@ export async function runAction(options) {
           if (username && password) {
             await ensureBlueskyLoggedIn(page, { username, password });
           } else {
-            // Check if we're already logged in from saved session
-            const isLoggedIn = await page.evaluate(() => {
+            // Check if we're already logged in from saved session with detailed debugging
+            const loginStatus = await page.evaluate(() => {
+              const debugInfo = {
+                url: window.location.href,
+                title: document.title,
+                cookies: document.cookie,
+                localStorageKeys: Object.keys(localStorage),
+                sessionStorageKeys: Object.keys(sessionStorage)
+              };
+              
+              // Check for login indicators
               const composeButton = document.querySelector('[aria-label*="Compose"]') || 
-                                   document.querySelector('[data-testid*="compose"]');
+                                   document.querySelector('[data-testid*="compose"]') ||
+                                   document.querySelector('button[aria-label*="Write a post"]');
               const userMenu = document.querySelector('[aria-label*="Profile"]') || 
                               document.querySelector('[data-testid*="profile"]');
-              return !!(composeButton || userMenu);
+              const feedIndicator = document.querySelector('[aria-label*="Timeline"]') ||
+                                   document.querySelector('[data-testid*="feed"]');
+              const homeIndicator = document.querySelector('a[href="/"]') ||
+                                   document.querySelector('a[href*="home"]');
+              
+              debugInfo.foundElements = {
+                composeButton: !!composeButton,
+                userMenu: !!userMenu,
+                feedIndicator: !!feedIndicator,
+                homeIndicator: !!homeIndicator
+              };
+              
+              const isLoggedIn = !!(composeButton || userMenu || feedIndicator);
+              debugInfo.isLoggedIn = isLoggedIn;
+              
+              return debugInfo;
             });
             
-            if (!isLoggedIn) {
-              return { ok: false, message: 'Bluesky login required. Please login first using the Login tab with your credentials.' };
+            console.log('🔍 Bluesky Login Status Debug:', JSON.stringify(loginStatus, null, 2));
+            
+            if (!loginStatus.isLoggedIn) {
+              return { ok: false, message: 'Bluesky login required. Session appears to be expired. Please login again using the Login tab.' };
             }
             console.log('✅ Already logged into Bluesky from saved session');
           }
@@ -3583,24 +3610,160 @@ async function blueskyLike(page, postUrl) {
 async function blueskyComment(page, postUrl, comment) {
   console.log(`💬 Attempting to comment on Bluesky post: ${postUrl}`);
   await page.goto(postUrl, { waitUntil: 'networkidle2' });
-  await sleep(1000);
+  await sleep(2000);
   
   try {
-    // Look for reply button
-    const replyButton = await page.waitForSelector('[aria-label*="Reply"], [data-testid*="reply"], button[aria-label*="reply"]', { timeout: 5000 });
+    // Look for reply button with enhanced selectors
+    console.log('🔍 Looking for reply button...');
+    const replySelectors = [
+      '[aria-label*="Reply"]',
+      '[data-testid*="reply"]', 
+      'button[aria-label*="reply"]',
+      '[aria-label*="reply" i]',
+      'button:contains("Reply")',
+      '[role="button"][aria-label*="Reply"]'
+    ];
+    
+    let replyButton = null;
+    for (const selector of replySelectors) {
+      try {
+        if (selector.includes(':contains')) {
+          replyButton = await page.evaluateHandle(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            return buttons.find(btn => btn.textContent.toLowerCase().includes('reply'));
+          });
+          if (replyButton && await replyButton.evaluate(el => el)) {
+            console.log('🎯 Found reply button by text content');
+            break;
+          }
+        } else {
+          await page.waitForSelector(selector, { timeout: 2000 });
+          replyButton = await page.$(selector);
+          if (replyButton) {
+            console.log(`🎯 Found reply button with selector: ${selector}`);
+            break;
+          }
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    if (!replyButton) {
+      throw new Error('Could not find reply button on Bluesky post');
+    }
+    
     await replyButton.click();
-    await sleep(1000);
+    console.log('✅ Reply button clicked, waiting for comment area...');
+    await sleep(2000);
     
-    // Look for comment textarea
-    const textarea = await page.waitForSelector('textarea, [contenteditable="true"]', { timeout: 5000 });
+    // Look for comment textarea with enhanced selectors
+    console.log('🔍 Looking for comment textarea...');
+    const textareaSelectors = [
+      'textarea',
+      '[contenteditable="true"]',
+      '[data-testid*="composer"]',
+      '[data-testid*="text"]',
+      '[placeholder*="Write"]',
+      '[placeholder*="Reply"]',
+      '[role="textbox"]',
+      'div[contenteditable="true"]',
+      'textarea[placeholder*="reply"]'
+    ];
+    
+    let textarea = null;
+    for (const selector of textareaSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 2000 });
+        textarea = await page.$(selector);
+        if (textarea) {
+          console.log(`🎯 Found textarea with selector: ${selector}`);
+          break;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    if (!textarea) {
+      // Debug what elements are actually available
+      const availableElements = await page.evaluate(() => {
+        const elements = [];
+        document.querySelectorAll('textarea, [contenteditable], [role="textbox"], input[type="text"]').forEach(el => {
+          elements.push({
+            tagName: el.tagName,
+            type: el.type || 'none',
+            contentEditable: el.contentEditable,
+            placeholder: el.placeholder || 'none',
+            'data-testid': el.getAttribute('data-testid') || 'none',
+            'aria-label': el.getAttribute('aria-label') || 'none',
+            role: el.getAttribute('role') || 'none'
+          });
+        });
+        return elements;
+      });
+      
+      console.log('🔍 Available text input elements:', JSON.stringify(availableElements, null, 2));
+      throw new Error('Could not find comment textarea on Bluesky post');
+    }
+    
     await textarea.click();
+    await sleep(500);
     await textarea.type(comment);
+    console.log('✅ Comment text entered');
     await sleep(1000);
     
-    // Look for submit button
-    const submitButton = await page.waitForSelector('button[type="submit"], [data-testid*="post"], [aria-label*="Post"]', { timeout: 5000 });
-    await submitButton.click();
+    // Look for submit button with enhanced selectors
+    console.log('🔍 Looking for submit button...');
+    const submitSelectors = [
+      'button[type="submit"]',
+      '[data-testid*="post"]',
+      '[aria-label*="Post"]',
+      'button:contains("Post")',
+      'button:contains("Reply")',
+      '[data-testid*="reply"]',
+      '[role="button"][aria-label*="Post"]'
+    ];
     
+    let submitButton = null;
+    for (const selector of submitSelectors) {
+      try {
+        if (selector.includes(':contains')) {
+          submitButton = await page.evaluateHandle(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            return buttons.find(btn => 
+              btn.textContent.toLowerCase().includes('post') || 
+              btn.textContent.toLowerCase().includes('reply')
+            );
+          });
+          if (submitButton && await submitButton.evaluate(el => el)) {
+            console.log('🎯 Found submit button by text content');
+            break;
+          }
+        } else {
+          await page.waitForSelector(selector, { timeout: 2000 });
+          submitButton = await page.$(selector);
+          if (submitButton) {
+            console.log(`🎯 Found submit button with selector: ${selector}`);
+            break;
+          }
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    if (!submitButton) {
+      // Try keyboard shortcut as fallback
+      console.log('⚠️ No submit button found, trying Cmd+Enter...');
+      await page.keyboard.down('Meta');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Meta');
+    } else {
+      await submitButton.click();
+    }
+    
+    await sleep(2000);
     console.log('✅ Bluesky comment posted successfully!');
     return { success: true };
     
