@@ -2873,7 +2873,7 @@ export async function runAction(options) {
           }
           
           for (const postUrl of posts) {
-            attempts++;
+          attempts++;
             
             try {
               // Check if we've already commented on this post
@@ -2965,7 +2965,7 @@ export async function runAction(options) {
               }
               
               // Like the post first if requested (on the already-loaded page)
-              if (likePost) {
+            if (likePost) {
                 try {
                   // Check if already liked (on current page)
                   const alreadyLiked = await page.evaluate(() => {
@@ -3008,7 +3008,7 @@ export async function runAction(options) {
                       console.log(`⚠️ Could not find like button on current page`);
                     }
                   }
-                } catch (likeError) {
+              } catch (likeError) {
                   console.log(`⚠️ Failed to like post ${postUrl}: ${likeError.message}`);
                   // Don't fail the whole operation if like fails
                 }
@@ -3069,7 +3069,7 @@ export async function runAction(options) {
                             await submitButton.click();
                             console.log(`✅ Comment submitted using selector: ${submitSelector}`);
                             submitted = true;
-                            break;
+              break;
                           }
                         } catch (error) {
                           continue;
@@ -3087,7 +3087,7 @@ export async function runAction(options) {
                       commented = true;
                       break;
                     }
-                  } catch (error) {
+          } catch (error) {
                     continue;
                   }
                 }
@@ -3134,9 +3134,9 @@ export async function runAction(options) {
         }
         
         console.log(`\n🎉 FINAL RESULTS: ${successfulComments}/${targetComments} comments posted`);
-          
-        return { 
-          ok: true, 
+
+        return {
+          ok: true,
           message: `Auto-commented on ${successfulComments} posts (searched ${attempts} posts total)`, 
           results,
           attempts: successfulComments
@@ -3211,7 +3211,25 @@ export async function runAction(options) {
 
         // Ensure we're logged in before starting auto-comment
         try {
-          await ensureBlueskyLoggedIn(page, { username, password });
+          // For auto-comment, we should already have a saved session
+          // Only attempt login if we have credentials
+          if (username && password) {
+            await ensureBlueskyLoggedIn(page, { username, password });
+          } else {
+            // Check if we're already logged in from saved session
+            const isLoggedIn = await page.evaluate(() => {
+              const composeButton = document.querySelector('[aria-label*="Compose"]') || 
+                                   document.querySelector('[data-testid*="compose"]');
+              const userMenu = document.querySelector('[aria-label*="Profile"]') || 
+                              document.querySelector('[data-testid*="profile"]');
+              return !!(composeButton || userMenu);
+            });
+            
+            if (!isLoggedIn) {
+              return { ok: false, message: 'Bluesky login required. Please login first using the Login tab with your credentials.' };
+            }
+            console.log('✅ Already logged into Bluesky from saved session');
+          }
         } catch (error) {
           return { ok: false, message: `Bluesky login failed: ${error.message}` };
         }
@@ -3243,7 +3261,7 @@ export async function runAction(options) {
               let finalComment = comment || 'Great post!';
               if (useAI) {
                 console.log('🤖 Generating AI comment...');
-                const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
+              const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
                 const postContent = await getPostContent(page, postUrl, platform);
                 finalComment = await generateAIComment(postContent, sessionAssistantId);
               }
@@ -3439,6 +3457,9 @@ async function ensureBlueskyLoggedIn(page, { username, password }) {
     }
     
     await usernameField.click();
+    if (!username || typeof username !== 'string') {
+      throw new Error('Username is required for Bluesky login but was not provided');
+    }
     await usernameField.type(username);
     console.log(`✅ Entered username: ${username}`);
     
@@ -3449,6 +3470,9 @@ async function ensureBlueskyLoggedIn(page, { username, password }) {
     }
     
     await passwordField.click();
+    if (!password || typeof password !== 'string') {
+      throw new Error('Password is required for Bluesky login but was not provided');
+    }
     await passwordField.type(password);
     console.log('✅ Entered password');
     
