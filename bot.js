@@ -218,11 +218,25 @@ async function launchBrowser(headful, platform = null) {
         try {
           await page.evaluate(() => true);
           console.log(`Reusing existing headful context for ${platform}`);
+          
+          // Ensure page is brought to front even when reusing context
+          if (headful) {
+            await page.bringToFront();
+            console.log('👁️ Browser window brought to front for reused context');
+          }
+          
           return { browser: globalBrowser, page };
         } catch (pageError) {
           console.log(`Existing page for ${platform} is invalid, creating new page in existing context`);
           const newPage = await context.newPage();
           await setupPage(newPage, headful);
+          
+          // Bring new page to front in headful mode
+          if (headful) {
+            await newPage.bringToFront();
+            console.log('👁️ Browser window brought to front for new page in existing context');
+          }
+          
           platformContexts.set(platform, { context, page: newPage });
           return { browser: globalBrowser, page: newPage };
         }
