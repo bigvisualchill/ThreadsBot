@@ -3884,38 +3884,76 @@ async function blueskyComment(page, postUrl, comment) {
     
     await sleep(3000); // Give more time for comment to appear
     
-    // Verify the comment was actually posted by looking for it on the page
+    // Enhanced verification: Check for success indicators AND comment presence
     console.log('🔍 Verifying comment was posted...');
     const commentVerification = await page.evaluate((commentText) => {
-      // Look for the comment text in the page
-      const allText = document.body.innerText.toLowerCase();
       const commentLower = commentText.toLowerCase();
       
-      // Also look for comment elements that might contain our text
-      const commentElements = document.querySelectorAll('[data-testid*="post"], article, [role="article"], .comment, [data-testid*="reply"]');
-      let foundInElement = false;
+      // Look for success indicators (new comment elements, success messages, etc.)
+      const successIndicators = document.querySelectorAll('[data-testid*="success"], .success, [aria-label*="success"]');
       
-      commentElements.forEach(el => {
-        if (el.innerText && el.innerText.toLowerCase().includes(commentLower)) {
-          foundInElement = true;
+      // Look for recently added comment elements (usually have timestamp indicators)
+      const recentComments = document.querySelectorAll('[data-testid*="post"]:not([data-testid*="original"]), [role="article"]:has([data-testid*="reply"])');
+      
+      // Check if our comment text appears in recent comments specifically
+      let foundInRecentComment = false;
+      let recentCommentTexts = [];
+      
+      recentComments.forEach((el, index) => {
+        const text = el.innerText?.toLowerCase() || '';
+        recentCommentTexts.push(text.substring(0, 100)); // First 100 chars for debugging
+        
+        // Only consider it a match if:
+        // 1. The comment text is substantial (not just "thanks" or "great")
+        // 2. The element looks like a new comment (has reply indicators)
+        // 3. The text match is significant (not just a word overlap)
+        if (commentText.length > 10 && // Substantial comment
+            text.includes(commentLower) && 
+            (el.querySelector('[data-testid*="reply"]') || el.querySelector('[aria-label*="reply"]'))) {
+          foundInRecentComment = true;
+        }
+      });
+      
+      // Additional check: Look for our comment in the textarea (might still be there if failed)
+      const textareas = document.querySelectorAll('textarea, [contenteditable="true"]');
+      let commentStillInTextarea = false;
+      textareas.forEach(textarea => {
+        if (textarea.value?.toLowerCase().includes(commentLower) || 
+            textarea.innerText?.toLowerCase().includes(commentLower)) {
+          commentStillInTextarea = true;
         }
       });
       
       return {
-        foundInPageText: allText.includes(commentLower),
-        foundInElements: foundInElement,
-        totalCommentElements: commentElements.length
+        foundInRecentComment,
+        recentCommentCount: recentComments.length,
+        recentCommentTexts: recentCommentTexts.slice(0, 3), // First 3 for debugging
+        successIndicatorsFound: successIndicators.length,
+        commentStillInTextarea, // If true, submission likely failed
+        commentLength: commentText.length
       };
     }, comment);
     
-    console.log('🔍 Comment verification result:', commentVerification);
+    console.log('🔍 Enhanced comment verification:', commentVerification);
     
-    if (commentVerification.foundInPageText || commentVerification.foundInElements) {
-      console.log('✅ Bluesky comment posted successfully - verified on page!');
+    // More strict verification: require finding in recent comments AND not still in textarea
+    const verificationPassed = commentVerification.foundInRecentComment && 
+                               !commentVerification.commentStillInTextarea &&
+                               commentVerification.recentCommentCount > 0;
+    
+    if (verificationPassed) {
+      console.log('✅ Bluesky comment posted successfully - verified in recent comments!');
       return { success: true, verified: true };
     } else {
-      console.log('⚠️ Comment submission completed but verification failed - comment may not have posted');
-      return { success: false, verified: false, message: 'Comment not found on page after submission' };
+      const reason = commentVerification.commentStillInTextarea ? 
+        'Comment text still in textarea (submission likely failed)' :
+        !commentVerification.foundInRecentComment ? 
+          'Comment not found in recent comment elements' :
+          'No recent comments detected on page';
+          
+      console.log(`⚠️ Comment verification failed: ${reason}`);
+      console.log('🔍 This may indicate the comment did not actually post to Bluesky');
+      return { success: false, verified: false, message: `Comment verification failed: ${reason}` };
     }
     
   } catch (error) {
