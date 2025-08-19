@@ -222,7 +222,21 @@ async function launchBrowser(headful, platform = null) {
           // Ensure page is brought to front even when reusing context
           if (headful) {
             await page.bringToFront();
-            console.log('👁️ Browser window brought to front for reused context');
+            // Additional steps to ensure visibility on macOS
+            await page.evaluate(() => {
+              if (window.focus) window.focus();
+            });
+            // Force window to foreground (macOS specific)
+            try {
+              await page.evaluate(() => {
+                if (window.chrome && window.chrome.app && window.chrome.app.window) {
+                  window.chrome.app.window.current().focus();
+                }
+              });
+            } catch (e) {
+              // Chrome app API not available, that's okay
+            }
+            console.log('👁️ Browser window brought to front for reused context (enhanced)');
           }
           
           return { browser: globalBrowser, page };
@@ -3942,14 +3956,72 @@ async function blueskyComment(page, postUrl, comment) {
     if (!submitButton) {
       // Try keyboard shortcut as fallback
       console.log('⚠️ No submit button found, trying Cmd+Enter...');
+      await textarea.focus(); // Ensure textarea is focused
       await page.keyboard.down('Meta');
       await page.keyboard.press('Enter');
       await page.keyboard.up('Meta');
+      console.log('✅ Cmd+Enter pressed for comment submission');
     } else {
+      console.log('🎯 Clicking submit button...');
       await submitButton.click();
+      await sleep(500);
+      
+      // Fallback: If button click didn't work, try keyboard shortcut
+      console.log('🔄 Also trying Cmd+Enter as backup...');
+      await textarea.focus();
+      await page.keyboard.down('Meta');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Meta');
+      console.log('✅ Submit button clicked + Cmd+Enter backup');
     }
     
-    await sleep(3000); // Give more time for comment to appear
+    // Quick check if comment is still in textarea (immediate failure detection)
+    await sleep(1000);
+    const immediateCheck = await page.evaluate((commentText) => {
+      const textareas = document.querySelectorAll('textarea, [contenteditable="true"]');
+      let stillInTextarea = false;
+      textareas.forEach(ta => {
+        if (ta.value?.toLowerCase().includes(commentText.toLowerCase()) || 
+            ta.innerText?.toLowerCase().includes(commentText.toLowerCase())) {
+          stillInTextarea = true;
+        }
+      });
+      return stillInTextarea;
+    }, comment);
+    
+    if (immediateCheck) {
+      console.log('⚠️ Comment still in textarea after 1s, trying alternative submission...');
+      // Try alternative submission methods
+      await textarea.focus();
+      await sleep(500);
+      
+      // Try Tab to submit button then Enter
+      await page.keyboard.press('Tab');
+      await sleep(200);
+      await page.keyboard.press('Enter');
+      console.log('🔄 Tried Tab+Enter submission');
+      
+      await sleep(1000);
+      
+      // If still there, try Escape then resubmit
+      const stillThere = await page.evaluate((commentText) => {
+        const textareas = document.querySelectorAll('textarea, [contenteditable="true"]');
+        return Array.from(textareas).some(ta => 
+          ta.value?.toLowerCase().includes(commentText.toLowerCase()) || 
+          ta.innerText?.toLowerCase().includes(commentText.toLowerCase())
+        );
+      }, comment);
+      
+      if (stillThere) {
+        console.log('🔄 Final attempt: Ctrl+Enter...');
+        await textarea.focus();
+        await page.keyboard.down('Control');
+        await page.keyboard.press('Enter');
+        await page.keyboard.up('Control');
+      }
+    }
+    
+    await sleep(2000); // Give more time for comment to appear
     
     // Enhanced verification: Check for success indicators AND comment presence
     console.log('🔍 Verifying comment was posted...');
