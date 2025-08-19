@@ -2388,8 +2388,75 @@ export async function runAction(options) {
     // Handle check-session action
     if (action === 'check-session') {
       page = browserResult.page;
-      const result = await checkSessionStatus(page, platform, sessionName);
-      return { ok: true, ...result };
+      
+      // Load session first
+      const sessionLoaded = await loadSession(page, platform, sessionName);
+      
+      // Use the same login detection logic as other actions
+      if (platform === 'bluesky') {
+        await page.goto('https://bsky.app/', { waitUntil: 'networkidle2' });
+        
+        const loginStatus = await page.evaluate(() => {
+          const composeButton = document.querySelector('[aria-label*="Compose"], [data-testid*="compose"], button[aria-label*="compose" i]');
+          const userMenu = document.querySelector('[aria-label*="Account"], [data-testid*="account"], [data-testid*="user"]');
+          const feedIndicator = document.querySelector('[data-testid*="feed"], .feed, [aria-label*="feed"]');
+          const homeIndicator = document.querySelector('[aria-label*="Home"], [data-testid*="home"]');
+          
+          const debugInfo = {
+            url: window.location.href,
+            title: document.title,
+            cookies: document.cookie,
+            localStorageKeys: Object.keys(localStorage),
+            sessionStorageKeys: Object.keys(sessionStorage),
+            foundElements: {
+              composeButton: !!composeButton,
+              userMenu: !!userMenu,
+              feedIndicator: !!feedIndicator,
+              homeIndicator: !!homeIndicator
+            }
+          };
+          
+          // Check localStorage for logged-out indicators
+          const loggedOutIndicators = debugInfo.localStorageKeys.filter(key => 
+            key.includes('logged-out') || key.includes('anonymous')
+          );
+          
+          // Check for positive login indicators in localStorage
+          const loggedInIndicators = debugInfo.localStorageKeys.filter(key => 
+            key.includes('did:plc:') || key.includes('BSKY_STORAGE') || key.includes('agent-labelers')
+          );
+          
+          // Strong login detection: UI elements OR localStorage indicators override stale logged-out keys
+          const hasUIIndicators = !!(composeButton || userMenu);
+          const hasStorageIndicators = loggedInIndicators.length > 0;
+          const isLoggedIn = hasUIIndicators || hasStorageIndicators;
+          
+          debugInfo.isLoggedIn = isLoggedIn;
+          debugInfo.loggedOutIndicators = loggedOutIndicators;
+          debugInfo.loggedInIndicators = loggedInIndicators;
+          debugInfo.hasUIIndicators = hasUIIndicators;
+          debugInfo.hasStorageIndicators = hasStorageIndicators;
+          
+          return debugInfo;
+        });
+        
+        console.log('🔍 Bluesky Login Status Debug:', JSON.stringify(loginStatus, null, 2));
+        
+        if (loginStatus.isLoggedIn) {
+          console.log('✅ Bluesky session is valid - user is logged in');
+          return { ok: true, message: 'Logged in', loggedIn: true, platform, sessionName };
+        } else {
+          const uiStatus = loginStatus.hasUIIndicators ? '✅ UI elements present' : '❌ Missing UI elements';
+          const storageStatus = loginStatus.hasStorageIndicators ? '✅ Auth data present' : '❌ No auth data';
+          const reason = `${uiStatus}, ${storageStatus}`;
+          console.log(`❌ Bluesky session is invalid - user is logged out. Status: ${reason}`);
+          return { ok: true, message: 'Logged out', loggedIn: false, platform, sessionName, reason };
+        }
+      } else {
+        // For other platforms, implement similar logic or return basic status
+        console.log(`ℹ️ Status check for ${platform} - session loaded: ${sessionLoaded}`);
+        return { ok: true, message: sessionLoaded ? 'Session loaded' : 'No session', loggedIn: sessionLoaded, platform, sessionName };
+      }
     }
 
 
