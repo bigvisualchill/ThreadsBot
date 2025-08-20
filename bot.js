@@ -1825,7 +1825,68 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
         console.log(`\n📄 POST ${currentPost}: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
         
-        // Check if already commented
+        // Filter 1: Check text length (must be at least 5 words)
+        const wordCount = postContent.trim().split(/\s+/).filter(word => word.length > 0).length;
+        if (wordCount < 5) {
+          console.log(`⏭️  SKIP: Post too short (${wordCount} words, need 5+)`);
+          await clickBackToSearch(page, searchUrl, false);
+          await sleep(2000);
+          
+          results.push({ 
+            post: currentPost, 
+            success: false, 
+            skipped: true, 
+            reason: `Post too short (${wordCount} words)` 
+          });
+          currentPost++;
+          continue;
+        }
+        console.log(`✅ TEXT LENGTH: ${wordCount} words (sufficient)`);
+        
+        // Filter 2: Check for video content
+        const hasVideo = await page.evaluate(() => {
+          // Look for video elements in X/Twitter
+          const videoSelectors = [
+            'video',
+            '[data-testid="videoPlayer"]',
+            '[data-testid="videoComponent"]',
+            '[aria-label*="video" i]',
+            'div[role="button"][aria-label*="play" i]',
+            '[data-testid="playButton"]'
+          ];
+          
+          for (const selector of videoSelectors) {
+            if (document.querySelector(selector)) {
+              return true;
+            }
+          }
+          
+          // Check for video-related indicators in tweet
+          const tweetText = document.body.textContent.toLowerCase();
+          if (tweetText.includes('video') && (tweetText.includes('play') || tweetText.includes('watch'))) {
+            return true;
+          }
+          
+          return false;
+        });
+        
+        if (hasVideo) {
+          console.log(`⏭️  SKIP: Post contains video content`);
+          await clickBackToSearch(page, searchUrl, false);
+          await sleep(2000);
+          
+          results.push({ 
+            post: currentPost, 
+            success: false, 
+            skipped: true, 
+            reason: 'Post contains video' 
+          });
+          currentPost++;
+          continue;
+        }
+        console.log(`✅ VIDEO CHECK: No video content detected`);
+        
+        // Filter 3: Check if already commented
         
         // Check for existing comments
         const hasMyComment = await page.evaluate((username) => {
@@ -2852,7 +2913,59 @@ export async function runAction(options) {
               console.log(`🎯 Processing post (attempts: ${attempts}, successes: ${successes}/${targetSuccesses}): ${postUrl}`);
               console.log(`🎯 LOOP CHECK: successes=${successes}/${targetSuccesses}, consecutiveFailures=${consecutiveFailures}`);
               
-              // Early duplicate check — skip without generating AI or navigating
+              // Get post content for filtering
+              const postContent = await getPostContent(page, postUrl, platform);
+              console.log(`📄 POST CONTENT: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
+              
+              // Filter 1: Check text length (must be at least 5 words)
+              const wordCount = postContent.trim().split(/\s+/).filter(word => word.length > 0).length;
+              if (wordCount < 5) {
+                console.log(`⏭️  SKIP: Post too short (${wordCount} words, need 5+) → ${postUrl}`);
+                results.push({ url: postUrl, success: false, error: `Post too short (${wordCount} words)` });
+                attempts--; // Don't count as real attempt
+                continue;
+              }
+              console.log(`✅ TEXT LENGTH: ${wordCount} words (sufficient)`);
+              
+              // Filter 2: Check for video content
+              await page.goto(postUrl, { waitUntil: 'networkidle2' });
+              await sleep(2000);
+              
+              const hasVideo = await page.evaluate(() => {
+                // Look for video elements
+                const videoSelectors = [
+                  'video',
+                  '[aria-label*="video" i]',
+                  '[aria-label*="reel" i]',
+                  'div[role="button"][aria-label*="play" i]',
+                  '.video-player',
+                  '[data-testid*="video"]'
+                ];
+                
+                for (const selector of videoSelectors) {
+                  if (document.querySelector(selector)) {
+                    return true;
+                  }
+                }
+                
+                // Check for video-related text indicators
+                const pageText = document.body.textContent.toLowerCase();
+                if (pageText.includes('watch') || pageText.includes('play video') || pageText.includes('video player')) {
+                  return true;
+                }
+                
+                return false;
+              });
+              
+              if (hasVideo) {
+                console.log(`⏭️  SKIP: Post contains video content → ${postUrl}`);
+                results.push({ url: postUrl, success: false, error: 'Post contains video' });
+                attempts--; // Don't count as real attempt
+                continue;
+              }
+              console.log(`✅ VIDEO CHECK: No video content detected`);
+
+              // Filter 3: Early duplicate check — skip without generating AI
               console.log(`🔍 Checking if already commented (username: ${username})`);
               const already = await hasMyCommentAndCache({ page, username, postUrl });
               if (already) {
@@ -2864,9 +2977,6 @@ export async function runAction(options) {
                 continue; // Immediately move to next post in queue
               }
               console.log(`✅ No existing comment found, proceeding to comment on this post`);
-
-              console.log(`📝 Getting post content for commenting...`);
-              const postContent = await getPostContent(page, postUrl, platform);
               
               let finalComment;
               if (useAI) {
@@ -3084,7 +3194,56 @@ export async function runAction(options) {
           attempts++;
             
             try {
-              // Check if we've already commented on this post
+              // Get post content for filtering
+              const threadsPostContent = await getPostContent(page, postUrl, platform);
+              console.log(`📄 POST CONTENT: "${threadsPostContent.slice(0, 80)}${threadsPostContent.length > 80 ? '...' : ''}"`);
+              
+              // Filter 1: Check text length (must be at least 5 words)
+              const wordCount = threadsPostContent.trim().split(/\s+/).filter(word => word.length > 0).length;
+              if (wordCount < 5) {
+                console.log(`⏭️  SKIP: Post too short (${wordCount} words, need 5+) → ${postUrl}`);
+                results.push({ url: postUrl, success: false, error: `Post too short (${wordCount} words)` });
+                continue;
+              }
+              console.log(`✅ TEXT LENGTH: ${wordCount} words (sufficient)`);
+              
+              // Filter 2: Check for video content
+              await page.goto(postUrl, { waitUntil: 'networkidle2' });
+              await sleep(2000);
+              
+              const hasVideo = await page.evaluate(() => {
+                // Look for video elements in Threads
+                const videoSelectors = [
+                  'video',
+                  '[aria-label*="video" i]',
+                  '[role="button"][aria-label*="play" i]',
+                  'div[data-pressable-container="true"][aria-label*="play" i]',
+                  '.video-player'
+                ];
+                
+                for (const selector of videoSelectors) {
+                  if (document.querySelector(selector)) {
+                    return true;
+                  }
+                }
+                
+                // Check for video indicators in Threads
+                const pageText = document.body.textContent.toLowerCase();
+                if (pageText.includes('video') && (pageText.includes('play') || pageText.includes('watch'))) {
+                  return true;
+                }
+                
+                return false;
+              });
+              
+              if (hasVideo) {
+                console.log(`⏭️  SKIP: Post contains video content → ${postUrl}`);
+                results.push({ url: postUrl, success: false, error: 'Post contains video' });
+                continue;
+              }
+              console.log(`✅ VIDEO CHECK: No video content detected`);
+
+              // Filter 3: Check if we've already commented on this post
               const alreadyCommented = await hasMyThreadsCommentAndCache({
                 page,
                 username,
@@ -3105,7 +3264,7 @@ export async function runAction(options) {
               await sleep(1000);
               
               // Extract the actual post content
-              const postContent = await page.evaluate(() => {
+              const actualPostContent = await page.evaluate(() => {
                 // Find the main post content by looking for the largest text block that isn't a username
                 const allElements = document.querySelectorAll('div[dir="auto"], span');
                 const candidates = [];
@@ -3153,9 +3312,9 @@ export async function runAction(options) {
                 return candidates[0].text;
               });
               
-              console.log(`\n📄 POST: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
+              console.log(`\n📄 POST: "${actualPostContent.slice(0, 80)}${actualPostContent.length > 80 ? '...' : ''}"`);
               
-              if (postContent === 'No post content found') {
+              if (actualPostContent === 'No post content found') {
                 console.log(`❌ ERROR: Could not extract post content`);
                 results.push({ url: postUrl, success: false, error: 'Content extraction failed' });
                 continue;
@@ -3165,7 +3324,7 @@ export async function runAction(options) {
               let aiComment;
               if (useAI) {
               const sessionAssistantId = await getSessionAssistantId(platform, sessionName);
-              aiComment = await generateAIComment(postContent, sessionAssistantId);
+              aiComment = await generateAIComment(actualPostContent, sessionAssistantId);
                 console.log(`🤖 AI COMMENT: "${aiComment}"`);
               } else {
                 aiComment = comment;
@@ -3488,7 +3647,7 @@ export async function runAction(options) {
         console.log(`🎯 Target: ${targetSuccesses} successful comments`);
 
         try {
-          const results = [];
+        const results = [];
           let successCount = 0;
           let processedPosts = new Set(); // Track processed posts to avoid duplicates
           let discoveryAttempts = 0;
@@ -3510,9 +3669,9 @@ export async function runAction(options) {
               
               if (consecutiveEmptyDiscoveries >= maxConsecutiveEmpty) {
                 console.log(`⚠️ Stopping search after ${maxConsecutiveEmpty} consecutive empty discoveries - no more posts available`);
-                break;
-              }
-              
+            break;
+          }
+          
               // Wait longer before next attempt when no posts found
               console.log('⏳ Waiting before retry...');
               await sleep(5000);
@@ -3542,7 +3701,66 @@ export async function runAction(options) {
               try {
                 console.log(`\n🦋 [${successCount + 1}/${targetSuccesses}] Processing: ${postUrl}`);
 
-                // Check if we've already commented on this post
+                // Get post content for filtering
+              const postContent = await getPostContent(page, postUrl, platform);
+                console.log(`📄 POST CONTENT: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
+                
+                // Filter 1: Check text length (must be at least 5 words)
+                const wordCount = postContent.trim().split(/\s+/).filter(word => word.length > 0).length;
+                if (wordCount < 5) {
+                  console.log(`⏭️  SKIP: Post too short (${wordCount} words, need 5+) → ${postUrl}`);
+                  results.push({ 
+                    url: postUrl, 
+                    success: false, 
+                    error: `Post too short (${wordCount} words)`,
+                    skipped: true 
+                  });
+                  continue;
+                }
+                console.log(`✅ TEXT LENGTH: ${wordCount} words (sufficient)`);
+                
+                // Filter 2: Check for video content
+                await page.goto(postUrl, { waitUntil: 'networkidle2' });
+                await sleep(2000);
+                
+                const hasVideo = await page.evaluate(() => {
+                  // Look for video elements in Bluesky
+                  const videoSelectors = [
+                    'video',
+                    '[aria-label*="video" i]',
+                    '[role="button"][aria-label*="play" i]',
+                    'div[data-testid*="video"]',
+                    '.video-player'
+                  ];
+                  
+                  for (const selector of videoSelectors) {
+                    if (document.querySelector(selector)) {
+                      return true;
+                    }
+                  }
+                  
+                  // Check for video indicators in Bluesky
+                  const pageText = document.body.textContent.toLowerCase();
+                  if (pageText.includes('video') && (pageText.includes('play') || pageText.includes('watch'))) {
+                    return true;
+                  }
+                  
+                  return false;
+                });
+                
+                if (hasVideo) {
+                  console.log(`⏭️  SKIP: Post contains video content → ${postUrl}`);
+                  results.push({ 
+                    url: postUrl, 
+                    success: false, 
+                    error: 'Post contains video',
+                    skipped: true 
+                  });
+                  continue;
+                }
+                console.log(`✅ VIDEO CHECK: No video content detected`);
+
+                // Filter 3: Check if we've already commented on this post
                 const alreadyCommented = await blueskyHasMyComment(page, postUrl, username);
                 if (alreadyCommented) {
                   console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
@@ -3591,7 +3809,7 @@ export async function runAction(options) {
                 console.log('⏳ Waiting before next post...');
                 await sleep(3000);
               }
-
+              
             } catch (error) {
                 console.log(`❌ Error processing post: ${error.message}`);
                 results.push({ 
