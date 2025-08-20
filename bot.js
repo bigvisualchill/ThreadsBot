@@ -2510,8 +2510,49 @@ export async function runAction(options) {
         console.log('🔍 Bluesky Login Status Debug:', JSON.stringify(loginStatus, null, 2));
         
         if (loginStatus.isLoggedIn) {
-          console.log('✅ Bluesky session is valid - user is logged in');
-          return { ok: true, message: 'Logged in', loggedIn: true, platform, sessionName };
+          // Additional test: Check if search functionality works (tests token validity)
+          console.log('🔍 Testing Bluesky search functionality to verify token validity...');
+          try {
+            await page.goto('https://bsky.app/search?q=test', { waitUntil: 'networkidle2' });
+            await sleep(2000);
+            
+            const searchTest = await page.evaluate(() => {
+              const pageText = document.body.textContent;
+              const searchUnavailable = pageText.includes('Search is currently unavailable when logged out');
+              const hasSearchResults = document.querySelectorAll('a[href*="/post/"]').length > 0;
+              
+              return {
+                searchUnavailable,
+                hasSearchResults,
+                pageText: pageText.substring(0, 200) // First 200 chars for debugging
+              };
+            });
+            
+            if (searchTest.searchUnavailable) {
+              console.log('⚠️ Search functionality unavailable - token likely expired');
+              return { 
+                ok: true, 
+                message: 'Logged in but token expired - please re-login', 
+                loggedIn: false, 
+                platform, 
+                sessionName,
+                reason: 'Search token expired'
+              };
+            } else {
+              console.log('✅ Search functionality working - full authentication confirmed');
+              return { ok: true, message: 'Logged in', loggedIn: true, platform, sessionName };
+            }
+          } catch (searchError) {
+            console.log('⚠️ Search test failed:', searchError.message);
+            return { 
+              ok: true, 
+              message: 'Logged in but search failed', 
+              loggedIn: false, 
+              platform, 
+              sessionName,
+              reason: 'Search functionality failed'
+            };
+          }
         } else {
           const uiStatus = loginStatus.hasUIIndicators ? '✅ UI elements present' : '❌ Missing UI elements';
           const storageStatus = loginStatus.hasStorageIndicators ? '✅ Auth data present' : '❌ No auth data';
