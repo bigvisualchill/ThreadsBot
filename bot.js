@@ -4293,23 +4293,70 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
   const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(searchQuery)}`;
   console.log(`🔍 Navigating to: ${searchUrl}`);
   await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-  await sleep(3000);
+  await sleep(5000); // Increased wait time for content to load
   
+  // First, check if we're on the right page and can see content
+  const pageStatus = await page.evaluate(() => {
+    return {
+      url: window.location.href,
+      title: document.title,
+      hasContent: document.body.textContent.length > 100,
+      elementCount: document.querySelectorAll('*').length
+    };
+  });
+  console.log(`🔍 Page status:`, pageStatus);
+  
+  // Try multiple selectors to find posts
   const posts = await page.evaluate(() => {
-    const postElements = document.querySelectorAll('a[href*="/post/"]');
-    const urls = [];
+    const selectors = [
+      'a[href*="/post/"]',                    // Original selector
+      'a[href*="/profile/"][href*="/post/"]', // More specific
+      '[data-testid*="post"] a[href*="/post/"]', // With testid
+      'article a[href*="/post/"]',            // In article elements
+      '[role="article"] a[href*="/post/"]',   // Role-based
+      'div[data-testid*="feedItem"] a[href*="/post/"]' // Feed item specific
+    ];
     
-    postElements.forEach(element => {
-      const href = element.getAttribute('href');
-      if (href && href.includes('/post/')) {
+    const foundUrls = new Set();
+    const debug = {
+      selectorsChecked: [],
+      elementsFound: 0
+    };
+    
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      debug.selectorsChecked.push(`${selector}: ${elements.length} found`);
+      debug.elementsFound += elements.length;
+      
+      elements.forEach(element => {
+        const href = element.getAttribute('href');
+        if (href && href.includes('/post/')) {
+          const fullUrl = href.startsWith('http') ? href : `https://bsky.app${href}`;
+          foundUrls.add(fullUrl);
+        }
+      });
+    }
+    
+    // Also try looking for any links that might be posts
+    const allLinks = document.querySelectorAll('a[href]');
+    debug.allLinksCount = allLinks.length;
+    
+    allLinks.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href && href.includes('/post/') && href.includes('/profile/')) {
         const fullUrl = href.startsWith('http') ? href : `https://bsky.app${href}`;
-        urls.push(fullUrl);
+        foundUrls.add(fullUrl);
       }
     });
     
-    return [...new Set(urls)];
+    return {
+      urls: Array.from(foundUrls),
+      debug
+    };
   });
   
-  console.log(`🦋 Found ${posts.length} potential Bluesky posts`);
-  return posts.slice(0, maxPosts);
+  console.log(`🔍 Discovery debug:`, posts.debug);
+  console.log(`🦋 Found ${posts.urls.length} potential Bluesky posts`);
+  
+  return posts.urls.slice(0, maxPosts);
 }
