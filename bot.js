@@ -4297,10 +4297,54 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
     throw new Error('Either hashtag or keywords must be provided');
   }
   
-  const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(searchQuery)}`;
-  console.log(`🔍 Navigating to: ${searchUrl}`);
-  await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-  await sleep(5000); // Increased wait time for content to load
+  // Try multiple search formats
+  const searchFormats = [
+    searchQuery,                    // Original query (e.g., "inspiringquotes")
+    `#${searchQuery}`,             // With hashtag (e.g., "#inspiringquotes")
+    searchQuery.replace('#', '')   // Without hashtag (e.g., "inspiringquotes" if input was "#inspiringquotes")
+  ];
+  
+  console.log(`🔍 Will try search formats:`, searchFormats);
+  
+  let bestResults = [];
+  let bestUrl = '';
+  
+  for (const format of searchFormats) {
+    const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(format)}`;
+    console.log(`🔍 Trying search: ${searchUrl}`);
+    
+    try {
+      await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+      await sleep(3000);
+      
+      // Quick check for posts on this format
+      const quickCheck = await page.evaluate(() => {
+        const postElements = document.querySelectorAll('a[href*="/post/"]');
+        return postElements.length;
+      });
+      
+      console.log(`🔍 Format "${format}" found ${quickCheck} potential posts`);
+      
+      if (quickCheck > bestResults.length) {
+        bestResults = Array(quickCheck);
+        bestUrl = searchUrl;
+      }
+      
+      // If we found posts, use this format
+      if (quickCheck > 0) {
+        console.log(`✅ Using search format: "${format}" (${quickCheck} posts found)`);
+        break;
+      }
+    } catch (error) {
+      console.log(`⚠️ Search format "${format}" failed: ${error.message}`);
+    }
+  }
+  
+  if (bestResults.length === 0) {
+    console.log(`⚠️ No search format found posts, using last tried URL: ${bestUrl || searchFormats[0]}`);
+  }
+  
+  await sleep(2000); // Additional wait for final content loading
   
   // First, check if we're on the right page and can see content
   const pageStatus = await page.evaluate(() => {
@@ -4364,6 +4408,36 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
   
   console.log(`🔍 Discovery debug:`, posts.debug);
   console.log(`🦋 Found ${posts.urls.length} potential Bluesky posts`);
+  
+  // If no posts found, provide additional debugging
+  if (posts.urls.length === 0) {
+    console.log(`🔍 No posts found - additional debugging:`);
+    
+    // Check if we're on the right page
+    const pageInfo = await page.evaluate(() => {
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyText: document.body.innerText.substring(0, 500),
+        hasSearchResults: document.body.innerText.includes('Search'),
+        hasLoginPrompt: document.body.innerText.includes('Sign up') || document.body.innerText.includes('Log in'),
+        linkCount: document.querySelectorAll('a').length,
+        postLinkCount: document.querySelectorAll('a[href*="/post/"]').length,
+        profileLinkCount: document.querySelectorAll('a[href*="/profile/"]').length
+      };
+    });
+    
+    console.log(`🔍 Page analysis:`, pageInfo);
+    
+    // Try alternative search approaches
+    if (pageInfo.hasLoginPrompt) {
+      console.log(`⚠️ Login prompt detected - may need to re-authenticate`);
+    }
+    
+    if (pageInfo.linkCount === 0) {
+      console.log(`⚠️ No links found on page - may be loading issue`);
+    }
+  }
   
   return posts.urls.slice(0, maxPosts);
 }
