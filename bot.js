@@ -3368,32 +3368,25 @@ export async function runAction(options) {
           if (username && password) {
             await ensureBlueskyLoggedIn(page, { username, password });
           } else {
-            // Check if we're already logged in from saved session with detailed debugging
+            // Use the same enhanced login detection logic as check-session
             const loginStatus = await page.evaluate(() => {
+              const composeButton = document.querySelector('[aria-label*="Compose"], [data-testid*="compose"], button[aria-label*="compose" i]');
+              const userMenu = document.querySelector('[aria-label*="Account"], [data-testid*="account"], [data-testid*="user"]');
+              const feedIndicator = document.querySelector('[data-testid*="feed"], .feed, [aria-label*="feed"]');
+              const homeIndicator = document.querySelector('[aria-label*="Home"], [data-testid*="home"]');
+              
               const debugInfo = {
                 url: window.location.href,
                 title: document.title,
                 cookies: document.cookie,
                 localStorageKeys: Object.keys(localStorage),
-                sessionStorageKeys: Object.keys(sessionStorage)
-              };
-              
-              // Check for login indicators
-              const composeButton = document.querySelector('[aria-label*="Compose"]') || 
-                                   document.querySelector('[data-testid*="compose"]') ||
-                                   document.querySelector('button[aria-label*="Write a post"]');
-              const userMenu = document.querySelector('[aria-label*="Profile"]') || 
-                              document.querySelector('[data-testid*="profile"]');
-              const feedIndicator = document.querySelector('[aria-label*="Timeline"]') ||
-                                   document.querySelector('[data-testid*="feed"]');
-              const homeIndicator = document.querySelector('a[href="/"]') ||
-                                   document.querySelector('a[href*="home"]');
-              
-              debugInfo.foundElements = {
-                composeButton: !!composeButton,
-                userMenu: !!userMenu,
-                feedIndicator: !!feedIndicator,
-                homeIndicator: !!homeIndicator
+                sessionStorageKeys: Object.keys(sessionStorage),
+                foundElements: {
+                  composeButton: !!composeButton,
+                  userMenu: !!userMenu,
+                  feedIndicator: !!feedIndicator,
+                  homeIndicator: !!homeIndicator
+                }
               };
               
               // Check localStorage for logged-out indicators
