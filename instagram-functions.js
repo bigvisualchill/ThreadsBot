@@ -27,6 +27,45 @@ export async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10
   await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
   await sleep(3000);
 
+  // Click on "Recent" tab to get latest posts instead of popular
+  console.log(`🚀 DISCOVERY: Switching to Recent posts for latest content`);
+  try {
+    await page.waitForSelector('div[role="tablist"] a, div[role="tablist"] button', { timeout: 5000 });
+    
+    const recentTabClicked = await page.evaluate(() => {
+      // Look for Recent tab - could be text or could be an icon
+      const tabs = Array.from(document.querySelectorAll('div[role="tablist"] a, div[role="tablist"] button'));
+      
+      for (const tab of tabs) {
+        const text = tab.textContent?.toLowerCase() || '';
+        // Look for "Recent" text or check if it's the second tab (Recent is usually after Top)
+        if (text.includes('recent') || text.includes('latest') || tabs.indexOf(tab) === 1) {
+          console.log('Found Recent tab, clicking...');
+          tab.click();
+          return true;
+        }
+      }
+      
+      // If no text match, try clicking the second tab (Recent is typically 2nd)
+      if (tabs.length >= 2) {
+        console.log('No Recent text found, clicking second tab (likely Recent)');
+        tabs[1].click();
+        return true;
+      }
+      
+      return false;
+    });
+    
+    if (recentTabClicked) {
+      console.log(`✅ DISCOVERY: Switched to Recent tab`);
+      await sleep(3000); // Wait for recent posts to load
+    } else {
+      console.log(`⚠️ DISCOVERY: Could not find Recent tab, using default view`);
+    }
+  } catch (recentError) {
+    console.log(`⚠️ DISCOVERY: Could not switch to Recent tab: ${recentError.message}`);
+  }
+
   // Check for login wall
   const needsLogin = await page.evaluate(() => {
     return document.querySelector('[role="dialog"]') || 

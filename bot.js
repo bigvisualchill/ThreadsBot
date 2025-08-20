@@ -4359,8 +4359,8 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
   let tokenExpired = false;
   
   for (const format of searchFormats) {
-    const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(format)}`;
-    console.log(`🔍 Trying search: ${searchUrl}`);
+    const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(format)}&sort=latest`;
+    console.log(`🔍 Trying search (latest): ${searchUrl}`);
     
     try {
       await page.goto(searchUrl, { waitUntil: 'networkidle2' });

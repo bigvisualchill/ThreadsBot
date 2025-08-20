@@ -474,9 +474,9 @@ async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
     throw new Error('Either hashtag or keywords must be provided for Threads search');
   }
   
-  // Use the correct Threads search URL format
-  const searchUrl = `https://www.threads.net/search?q=${encodeURIComponent(searchQuery)}&serp_type=default`;
-  console.log(`🔍 Navigating to Threads search: ${searchUrl}`);
+  // Use the correct Threads search URL format with recent sorting
+  const searchUrl = `https://www.threads.net/search?q=${encodeURIComponent(searchQuery)}&serp_type=recent`;
+  console.log(`🔍 Navigating to Threads search (recent): ${searchUrl}`);
   
   await page.goto(searchUrl, { waitUntil: 'networkidle2' });
   await sleep(3000); // Wait for search results to load
