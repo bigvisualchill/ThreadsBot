@@ -107,7 +107,15 @@ let platformContexts = new Map(); // platform -> { context, page }
 
 function getSessionFilePath(platform, sessionName) {
   const sessionsDir = path.join(__dirname, '.sessions');
-  return { sessionsDir, sessionPath: path.join(sessionsDir, `${platform}-${sessionName}.json`) };
+  
+  // If sessionName already contains platform prefix, don't double-prefix
+  // Handle both formats: "platform_username" and "username"
+  let cleanSessionName = sessionName;
+  if (sessionName.includes('_') && sessionName.startsWith(platform + '_')) {
+    cleanSessionName = sessionName.substring(platform.length + 1); // Remove "platform_"
+  }
+  
+  return { sessionsDir, sessionPath: path.join(sessionsDir, `${platform}-${cleanSessionName}.json`) };
 }
 
 

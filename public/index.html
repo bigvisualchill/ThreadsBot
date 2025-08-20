@@ -1589,13 +1589,16 @@
                     // Start the detailed progress simulation in parallel with the actual request
                     const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
                     
+                    // Extract just the username from platform_username format
+                    const sessionUsername = item.account.includes('_') ? item.account.split('_')[1] : item.account;
+                    
                     const requestPromise = fetch('/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             action: 'auto-comment',
                             platform: item.platform,
-                            sessionName: item.account,
+                            sessionName: sessionUsername,
                             searchCriteria: item.hashtag ? { hashtag: item.hashtag } : { keywords: item.keywords },
                             maxPosts: item.maxPosts,
                             useAI: item.useAI,
