@@ -4297,6 +4297,13 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
     throw new Error('Either hashtag or keywords must be provided');
   }
   
+  // Listen for token expiration errors
+  page.on('pageerror', (error) => {
+    if (error.message.includes('Token has expired')) {
+      console.log('🔍 Detected Bluesky token expiration error');
+    }
+  });
+
   // Try multiple search formats
   const searchFormats = [
     searchQuery,                    // Original query (e.g., "inspiringquotes")
@@ -4308,6 +4315,7 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
   
   let bestResults = [];
   let bestUrl = '';
+  let tokenExpired = false;
   
   for (const format of searchFormats) {
     const searchUrl = `https://bsky.app/search?q=${encodeURIComponent(format)}`;
@@ -4316,6 +4324,14 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
     try {
       await page.goto(searchUrl, { waitUntil: 'networkidle2' });
       await sleep(3000);
+      
+      // Check for token expiration in page content
+      const pageText = await page.evaluate(() => document.body.textContent);
+      if (pageText.includes('Search is currently unavailable when logged out')) {
+        console.log('⚠️ Bluesky search unavailable - token likely expired');
+        tokenExpired = true;
+        break;
+      }
       
       // Quick check for posts on this format
       const quickCheck = await page.evaluate(() => {
@@ -4337,6 +4353,30 @@ async function discoverBlueskyPosts(page, searchCriteria, maxPosts = 10) {
       }
     } catch (error) {
       console.log(`⚠️ Search format "${format}" failed: ${error.message}`);
+    }
+  }
+  
+  // Handle token expiration
+  if (tokenExpired) {
+    console.log('🔄 Attempting to refresh Bluesky session due to token expiration...');
+    try {
+      // Navigate to settings to trigger re-authentication
+      await page.goto('https://bsky.app/settings', { waitUntil: 'networkidle2' });
+      await sleep(2000);
+      
+      // Try the Tab, Tab, Enter sequence to open login
+      await page.keyboard.press('Tab');
+      await sleep(500);
+      await page.keyboard.press('Tab'); 
+      await sleep(500);
+      await page.keyboard.press('Enter');
+      await sleep(3000);
+      
+      console.log('⚠️ Bluesky token expired - manual re-login required');
+      throw new Error('Bluesky session expired - please login manually and save session again');
+    } catch (refreshError) {
+      console.log('❌ Failed to refresh Bluesky token:', refreshError.message);
+      throw new Error('Bluesky session expired and refresh failed');
     }
   }
   
