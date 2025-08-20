@@ -1586,12 +1586,10 @@
                 addLogEntry(`Starting: ${item.platformName} | ${item.account}`, 'info');
 
                 try {
-                    // Start the detailed progress simulation in parallel with the actual request
-                    const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
-                    
                     // Extract just the username from platform_username format
                     const sessionUsername = item.account.includes('_') ? item.account.substring(item.account.indexOf('_') + 1) : item.account;
                     
+                    // Start API request with timeout
                     const requestPromise = fetch('/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1608,8 +1606,27 @@
                         })
                     });
 
-                    // Wait for both the progress simulation and the actual request
-                    const [_, response] = await Promise.all([progressPromise, requestPromise]);
+                    // Test API connectivity first with a quick timeout
+                    let response;
+                    try {
+                        response = await Promise.race([
+                            requestPromise,
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout - check if server is running')), 5000))
+                        ]);
+                        
+                        // If API call succeeds, start progress simulation
+                        addLogEntry(`✅ Connected to server, starting ${item.platformName} automation...`, 'info');
+                        const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
+                        
+                        // Wait for progress simulation to complete
+                        await progressPromise;
+                        
+                    } catch (connectError) {
+                        // API call failed quickly - don't run progress simulation
+                        addLogEntry(`❌ Server connection failed: ${connectError.message}`, 'error');
+                        addLogEntry(`💡 Try restarting the server with start.command`, 'info');
+                        throw connectError;
+                    }
                     
                     // Final processing step
                     updateProgress(i, pendingItems.length, `📋 Processing results...`, item);
