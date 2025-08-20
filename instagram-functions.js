@@ -97,11 +97,6 @@ export async function discoverInstagramPosts(page, searchCriteria, maxPosts = 10
 // Instagram flows
 export async function ensureInstagramLoggedIn(page, { username, password }) {
   try {
-    // Validate credentials before attempting login
-    if (!username || !password) {
-      throw new Error('Instagram session missing and no credentials provided. Provide username/password or login headfully and save a session.');
-    }
-    
     console.log('Checking Instagram login status...');
     
     // First, go to Instagram home to check current status
@@ -200,6 +195,11 @@ export async function ensureInstagramLoggedIn(page, { username, password }) {
     }
 
     console.log('🔐 Not logged in, proceeding with login...');
+
+    // Validate credentials before attempting login
+    if (!username || !password) {
+      throw new Error('Instagram session missing and no credentials provided. Provide username/password or login headfully and save a session.');
+    }
 
     // Navigate to login page if not already there
     const needsNavigation = await page.evaluate(() => {

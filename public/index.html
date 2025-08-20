@@ -1590,7 +1590,7 @@
                     const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
                     
                     // Extract just the username from platform_username format
-                    const sessionUsername = item.account.includes('_') ? item.account.split('_')[1] : item.account;
+                    const sessionUsername = item.account.includes('_') ? item.account.substring(item.account.indexOf('_') + 1) : item.account;
                     
                     const requestPromise = fetch('/run', {
                         method: 'POST',
