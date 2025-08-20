@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-let isRunning = false;
+let runningPlatforms = new Set();
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -36,9 +36,16 @@ app.post('/run', async (req, res) => {
     headful: req.body?.headful
   });
   
-  if (isRunning) {
-    console.log('Request blocked - job already running');
-    return res.status(409).json({ ok: false, error: 'A job is already running. Please wait.' });
+  // Extract platform from request body
+  const requestPlatform = req.body?.platform;
+  
+  if (!requestPlatform) {
+    return res.status(400).json({ ok: false, error: 'Platform is required' });
+  }
+  
+  if (runningPlatforms.has(requestPlatform)) {
+    console.log(`Request blocked - ${requestPlatform} job already running`);
+    return res.status(409).json({ ok: false, error: `A ${requestPlatform} job is already running. Please wait.` });
   }
   
   const {
@@ -67,7 +74,7 @@ app.post('/run', async (req, res) => {
   console.log(`📡 SERVER: Using username: ${username} for session: ${sessionName}`);
 
   try {
-    isRunning = true;
+    runningPlatforms.add(requestPlatform);
     console.log('🚀 SERVER: About to call runAction');
     console.log('Starting runAction with:', { action, platform, sessionName, headful });
     console.log('🚀 SERVER: Calling runAction now...');
@@ -100,8 +107,8 @@ app.post('/run', async (req, res) => {
     });
     res.status(400).json({ ok: false, error: err.message || err.toString() || String(err) });
   } finally {
-    console.log('Setting isRunning to false');
-    isRunning = false;
+    console.log(`Setting ${requestPlatform} as no longer running`);
+    runningPlatforms.delete(requestPlatform);
   }
 });
 
