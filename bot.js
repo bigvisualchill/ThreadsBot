@@ -2683,9 +2683,16 @@ export async function runAction(options) {
               // Like the post if requested
               if (likePost) {
                 try {
-                  await instagramLike(page, postUrl);
+                  console.log(`❤️ Liking post: ${postUrl}`);
+                  const likeResult = await instagramLike(page, postUrl);
+                  if (likeResult) {
+                    console.log(`✅ Post liked successfully`);
+                  } else {
+                    console.log(`⚠️ Like may have failed (returned false)`);
+                  }
                 } catch (likeError) {
-                  // Don't fail the whole operation if like fails
+                  console.log(`❌ Like failed: ${likeError.message}`);
+                  // Don't fail the whole operation if like fails, but show the error
                 }
               }
               
