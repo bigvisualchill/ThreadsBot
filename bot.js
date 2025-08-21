@@ -1818,9 +1818,11 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
     
     let successfulComments = 0;
     let currentPost = 0;
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 10; // Stop if 10 posts in a row fail to load/process
     const results = [];
     
-    while (successfulComments < maxPosts && currentPost < 50) { // Reasonable safety limit to prevent infinite loops
+    while (successfulComments < maxPosts) { // Continue until target is reached
       currentPost++;
       
       try {
@@ -2040,6 +2042,8 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
           });
         }
         
+        consecutiveFailures = 0; // Reset failure counter on success
+        
         results.push({ 
           post: currentPost, 
           success: true, 
@@ -2058,6 +2062,13 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         
       } catch (error) {
         console.log(`❌ ERROR: ${error.message}`);
+        consecutiveFailures++;
+        
+        // Check if we should stop due to consecutive failures
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          console.log(`⏹️ Stopping X search after ${maxConsecutiveFailures} consecutive failures`);
+          break;
+        }
         
         // Try to return to search results
         await clickBackToSearch(page, searchUrl, false);
@@ -2514,11 +2525,7 @@ export async function runAction(options) {
       // Clear tracking when starting a new action
   if (action === 'like' || action === 'comment' || action === 'auto-comment') {
     // Note: Instagram tracking variables are now handled within instagram-functions.js
-    
-    // Also clear comment cache for fresh testing
-    if (platform === 'instagram') {
-      clearCommentCache();
-    }
+    // Comment cache is persistent to prevent duplicate comments
   }
 
   // Progress tracking helper
@@ -3313,18 +3320,28 @@ export async function runAction(options) {
         
         const results = [];
         let attempts = 0;
-        const maxAttempts = maxPosts * 3;
         let successfulComments = 0;
+        let consecutiveEmptyBatches = 0;
+        const maxConsecutiveEmpty = 3; // Only stop after 3 consecutive empty batches
         const targetComments = maxPosts || 1;
         
-        while (successfulComments < targetComments && attempts < maxAttempts) {
+        while (successfulComments < targetComments) {
           // Get a batch of posts to check
-          const batchSize = Math.min(10, maxAttempts - attempts);
+          const batchSize = Math.max(10, (targetComments - successfulComments) * 3);
           const posts = await discoverThreadsPosts(page, searchCriteria, batchSize);
           
           if (posts.length === 0) {
+            consecutiveEmptyBatches++;
+            console.log(`❌ No posts found in batch ${consecutiveEmptyBatches}/${maxConsecutiveEmpty}`);
+            if (consecutiveEmptyBatches >= maxConsecutiveEmpty) {
+              console.log(`⏹️ Stopping after ${maxConsecutiveEmpty} consecutive empty batches`);
             break;
           }
+            continue;
+          }
+          
+          // Reset empty batch counter when we find posts
+          consecutiveEmptyBatches = 0;
           
           for (const postUrl of posts) {
           attempts++;
