@@ -3693,6 +3693,9 @@ export async function runAction(options) {
             if (discoveredPosts.length === 0) {
               consecutiveEmptyDiscoveries++;
               console.log(`❌ No posts found in discovery attempt ${discoveryAttempts} (${consecutiveEmptyDiscoveries}/${maxConsecutiveEmpty} consecutive empty)`);
+              if (consecutiveEmptyDiscoveries === 1) {
+                console.log(`💡 Suggestion: Hashtag "${searchCriteria.hashtag || searchCriteria.keywords}" might not exist on Bluesky. Try #motivation or #inspiration`);
+              }
               
               if (consecutiveEmptyDiscoveries >= maxConsecutiveEmpty) {
                 console.log(`⚠️ Stopping search after ${maxConsecutiveEmpty} consecutive empty discoveries - no more posts available`);
