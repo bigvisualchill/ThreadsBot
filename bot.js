@@ -1874,28 +1874,43 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         }
         console.log(`✅ TEXT LENGTH: ${wordCount} words (sufficient)`);
         
-        // Filter 2: Check for video content
+        // Filter 2: Check for video content (focused on current tweet only)
         const hasVideo = await page.evaluate(() => {
-          // Look for video elements in X/Twitter
+          // Find the current tweet container first
+          const currentTweet = document.querySelector('[data-testid="tweet"]:focus') || 
+                              document.querySelector('[data-testid="tweet"][tabindex="-1"]') ||
+                              document.querySelector('article[role="article"]:first-of-type');
+          
+          if (!currentTweet) {
+            console.log('⚠️ Could not find current tweet container for video check');
+            return false;
+          }
+          
+          // Look for video elements specifically within the current tweet
           const videoSelectors = [
             'video',
             '[data-testid="videoPlayer"]',
             '[data-testid="videoComponent"]',
-            '[aria-label*="video" i]',
-            'div[role="button"][aria-label*="play" i]',
-            '[data-testid="playButton"]'
+            '[data-testid="playButton"]',
+            '[role="button"][aria-label*="play video" i]'
           ];
           
           for (const selector of videoSelectors) {
-            if (document.querySelector(selector)) {
+            if (currentTweet.querySelector(selector)) {
+              console.log(`🎥 Found video element: ${selector}`);
               return true;
             }
           }
           
-          // Check for video-related indicators in tweet
-          const tweetText = document.body.textContent.toLowerCase();
-          if (tweetText.includes('video') && (tweetText.includes('play') || tweetText.includes('watch'))) {
-            return true;
+          // Check for video indicators only in the current tweet's text
+          const tweetTextElement = currentTweet.querySelector('[data-testid="tweetText"]');
+          if (tweetTextElement) {
+            const tweetText = tweetTextElement.textContent.toLowerCase();
+            // Only flag if the tweet text itself mentions video AND play/watch
+            if (tweetText.includes('video') && (tweetText.includes('play') || tweetText.includes('watch'))) {
+              console.log(`🎥 Found video keywords in tweet text: "${tweetText.slice(0, 100)}..."`);
+              return true;
+            }
           }
           
           return false;
@@ -3941,10 +3956,17 @@ export async function runAction(options) {
                     }
                   }
                   
-                  // Check for video indicators in Bluesky
-                  const pageText = document.body.textContent.toLowerCase();
-                  if (pageText.includes('video') && (pageText.includes('play') || pageText.includes('watch'))) {
-                    return true;
+                  // Check for video indicators in Bluesky (scoped to current post)
+                  const postContainer = document.querySelector('[data-testid="postText"]') ||
+                                       document.querySelector('article') ||
+                                       document.querySelector('[role="article"]');
+                  
+                  if (postContainer) {
+                    const postText = postContainer.textContent.toLowerCase();
+                    if (postText.includes('video') && (postText.includes('play') || postText.includes('watch'))) {
+                      console.log(`🎥 Found video keywords in Bluesky post: "${postText.slice(0, 100)}..."`);
+                      return true;
+                    }
                   }
                   
                   return false;
