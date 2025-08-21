@@ -675,8 +675,15 @@ async function generateAIComment(postContent, sessionAssistantId = null) {
     comment = comment.trim();
     if (!comment) throw new Error('Assistant returned empty text');
 
-    console.log(`🤖 AI: Generated comment: "${comment}"`);
-    return comment;
+    // Filter: Replace em dashes (—) and en dashes (–) with commas for better social media formatting
+    const filteredComment = comment.replace(/[–—]/g, ',');
+    
+    if (filteredComment !== comment) {
+      console.log(`🔧 AI: Filtered em dashes → commas: "${filteredComment}"`);
+    }
+    
+    console.log(`🤖 AI: Generated comment: "${filteredComment}"`);
+    return filteredComment;
 
   } catch (error) {
     console.error('🤖 AI: OpenAI Assistants API error:', error.message);
