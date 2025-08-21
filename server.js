@@ -24,7 +24,59 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let runningPlatforms = new Set();
 
+// Store SSE connections for real-time progress updates
+const progressConnections = new Map(); // sessionId -> response object
+
 app.get('/health', (req, res) => res.json({ ok: true }));
+
+// Server-Sent Events endpoint for real-time progress updates
+app.get('/progress/:sessionId', (req, res) => {
+  const sessionId = req.params.sessionId;
+  
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+
+  // Store connection for this session
+  progressConnections.set(sessionId, res);
+  
+  // Send initial connection confirmation
+  res.write(`data: ${JSON.stringify({ 
+    type: 'connected', 
+    message: 'Progress tracking connected',
+    timestamp: new Date().toISOString()
+  })}\n\n`);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    progressConnections.delete(sessionId);
+    console.log(`📊 Progress connection closed for session: ${sessionId}`);
+  });
+
+  console.log(`📊 Progress connection established for session: ${sessionId}`);
+});
+
+// Function to send progress updates to connected clients
+function sendProgressUpdate(sessionId, progressData) {
+  const connection = progressConnections.get(sessionId);
+  if (connection) {
+    try {
+      connection.write(`data: ${JSON.stringify({
+        type: 'progress',
+        ...progressData,
+        timestamp: new Date().toISOString()
+      })}\n\n`);
+    } catch (error) {
+      console.log(`Error sending progress update to ${sessionId}:`, error.message);
+      progressConnections.delete(sessionId);
+    }
+  }
+}
 
 app.post('/run', async (req, res) => {
   console.log('🔥 === POST /run ENDPOINT HIT ===');
@@ -63,6 +115,7 @@ app.post('/run', async (req, res) => {
     aiContext = '',
     likePost = false,
     assistantId,
+    progressSessionId, // New field for progress tracking
   } = req.body || {};
 
   // Use environment variables if username/password not provided in request
@@ -94,6 +147,8 @@ app.post('/run', async (req, res) => {
       aiContext: aiContext || '',
       likePost: Boolean(likePost),
       assistantId,
+      progressSessionId,
+      sendProgress: progressSessionId ? (data) => sendProgressUpdate(progressSessionId, data) : null
     });
     
     console.log('runAction completed with result:', { ok: result.ok, message: result.message });

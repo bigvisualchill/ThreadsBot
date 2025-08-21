@@ -1589,7 +1589,42 @@
                     // Extract just the username from platform_username format
                     const sessionUsername = item.account.includes('_') ? item.account.substring(item.account.indexOf('_') + 1) : item.account;
                     
-                    // Start API request with timeout
+                    // Generate unique session ID for progress tracking
+                    const progressSessionId = `queue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    
+                    // Set up Server-Sent Events for real-time progress
+                    const progressSource = new EventSource(`/progress/${progressSessionId}`);
+                    
+                    progressSource.onmessage = (event) => {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'progress') {
+                            // Update progress with real data from backend
+                            updateProgress(i, pendingItems.length, data.step, item);
+                            addLogEntry(data.step.replace(/[🌐🔐🔍📝📊🤖💬❤️✅🔄📈]/g, '').trim(), 'info');
+                            
+                            // Update progress bar with real percentage
+                            if (data.current !== undefined && data.total !== undefined) {
+                                const itemProgress = (data.current / data.total) * 100;
+                                const overallProgress = (i / pendingItems.length * 100) + (itemProgress / pendingItems.length);
+                                
+                                document.getElementById('progressFill').style.width = `${Math.min(overallProgress, 95)}%`;
+                                document.getElementById('progressPercent').textContent = `${Math.round(overallProgress)}%`;
+                            }
+                            
+                            // Show posts completed if available
+                            if (data.postsCompleted !== undefined && data.postsTarget !== undefined) {
+                                addLogEntry(`Progress: ${data.postsCompleted}/${data.postsTarget} posts completed`, 'success');
+                            }
+                        }
+                    };
+                    
+                    progressSource.onerror = (error) => {
+                        console.log('Progress connection error:', error);
+                        progressSource.close();
+                    };
+                    
+                    // Start API request with progress tracking
                     const requestPromise = fetch('/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1602,7 +1637,8 @@
                             useAI: item.useAI,
                             comment: item.comment,
                             likePost: item.likePost,
-                            headful: false // Always headless in queue
+                            headful: false, // Always headless in queue
+                            progressSessionId: progressSessionId
                         })
                     });
 
@@ -1614,12 +1650,11 @@
                             new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout - check if server is running')), 5000))
                         ]);
                         
-                        // If API call succeeds, start progress simulation
+                        // If API call succeeds, wait for real progress via SSE
                         addLogEntry(`✅ Connected to server, starting ${item.platformName} automation...`, 'info');
-                        const progressPromise = simulateDetailedProgress(i, pendingItems.length, item);
                         
-                        // Wait for progress simulation to complete
-                        await progressPromise;
+                        // Wait for the actual API response (progress updates via SSE)
+                        await response;
                         
                     } catch (connectError) {
                         // API call failed quickly - don't run progress simulation
@@ -1633,6 +1668,9 @@
                     addLogEntry(`📋 Receiving results from ${item.platformName}`, 'info');
 
                     const result = await response.json();
+                    
+                    // Close progress connection
+                    progressSource.close();
                     
                     if (result.ok) {
                         item.status = 'completed';
@@ -1652,6 +1690,11 @@
                     item.status = 'failed';
                     updateProgress(i, pendingItems.length, `❌ Network error occurred`, item);
                     addLogEntry(`❌ Network Error: ${item.platformName} | ${item.account} - ${error.message}`, 'error');
+                    
+                    // Close progress connection on error
+                    if (typeof progressSource !== 'undefined' && progressSource) {
+                        progressSource.close();
+                    }
                 }
 
                 updateQueueDisplay();

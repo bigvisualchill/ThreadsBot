@@ -2486,6 +2486,8 @@ export async function runAction(options) {
     useAI = false,
     likePost = false,
     assistantId,
+    progressSessionId,
+    sendProgress,
   } = options;
   
       // Clear tracking when starting a new action
@@ -2497,6 +2499,19 @@ export async function runAction(options) {
       clearCommentCache();
     }
   }
+
+  // Progress tracking helper
+  const reportProgress = (step, details = {}) => {
+    if (sendProgress) {
+      sendProgress({
+        step,
+        platform,
+        action,
+        sessionName,
+        ...details
+      });
+    }
+  };
 
   let browser;
   let page;
@@ -2513,10 +2528,15 @@ export async function runAction(options) {
       throw new Error('searchCriteria is required for auto-comment action');
     }
 
+    // Report initial progress
+    reportProgress('🌐 Opening browser...', { current: 0, total: 100 });
+    
     // Launch browser with platform isolation for headful mode
     const browserResult = await launchBrowser(headful, platform);
     browser = browserResult.browser;
     page = browserResult.page;
+    
+    reportProgress('🔐 Authenticating...', { current: 20, total: 100 });
 
     // Handle logout action
     if (action === 'logout') {
@@ -2742,6 +2762,15 @@ export async function runAction(options) {
         console.log(`👤 ACCOUNT: ${username}`);
         console.log(`🔍 SEARCH: ${JSON.stringify(parsedCriteria)} (Target: ${maxPosts} comments)`);
 
+        reportProgress('🔍 Starting Instagram search...', { 
+          current: 40, 
+          total: 100,
+          platform: 'Instagram',
+          account: username,
+          searchCriteria: parsedCriteria,
+          targetPosts: maxPosts
+        });
+
         const results = [];
         const targetSuccesses = Math.max(1, Number(maxPosts) || 1);
         let successes = 0;
@@ -2770,6 +2799,15 @@ export async function runAction(options) {
           attempts++;
 
           try {
+            // Report progress for each post
+            reportProgress(`📄 Processing Instagram post ${attempts}...`, {
+              current: 40 + (successes / targetSuccesses) * 50,
+              total: 100,
+              postsCompleted: successes,
+              postsTarget: targetSuccesses,
+              currentPost: attempts
+            });
+
             // Get post content for display
             const postContent = await getPostContent(page, postUrl, platform);
             console.log(`\n📄 POST ${attempts}: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
@@ -2821,6 +2859,15 @@ export async function runAction(options) {
               results.push({ url: postUrl, success: true, comment: aiComment, liked: likePost });
               successes++;
               console.log(`✅ COMPLETED: Comment posted successfully (${successes}/${targetSuccesses})`);
+              
+              // Report success progress
+              reportProgress(`✅ Instagram comment posted! (${successes}/${targetSuccesses})`, {
+                current: 40 + (successes / targetSuccesses) * 50,
+                total: 100,
+                postsCompleted: successes,
+                postsTarget: targetSuccesses,
+                lastComment: aiComment.slice(0, 50) + '...'
+              });
               
               // Check if we've reached our target
               if (successes >= targetSuccesses) {
@@ -3034,9 +3081,25 @@ export async function runAction(options) {
                 successes++;
                 console.log(`🎯 Progress: ${successes}/${targetSuccesses} successful comments`);
                 
+                // Report success progress
+                reportProgress(`✅ Instagram comment posted! (${successes}/${targetSuccesses})`, {
+                  current: 40 + (successes / targetSuccesses) * 50,
+                  total: 100,
+                  postsCompleted: successes,
+                  postsTarget: targetSuccesses,
+                  lastComment: finalComment.slice(0, 50) + '...'
+                });
+                
                 // Check if we've reached our target
                 if (successes >= targetSuccesses) {
                   console.log(`🎉 Target reached! Successfully commented on ${successes} posts.`);
+                  reportProgress(`🎉 Instagram completed! ${successes} comments posted`, {
+                    current: 95,
+                    total: 100,
+                    postsCompleted: successes,
+                    postsTarget: targetSuccesses,
+                    completed: true
+                  });
                   break;
                 }
               }
@@ -3194,6 +3257,15 @@ export async function runAction(options) {
         console.log(`\n🎯 ACTION: Auto-commenting on Threads`);
         console.log(`👤 ACCOUNT: ${username}`);
         console.log(`🔍 SEARCH: #${searchCriteria.hashtag || searchCriteria.keywords} (Target: ${maxPosts} comments)`);
+
+        reportProgress('🔍 Starting Threads search...', { 
+          current: 40, 
+          total: 100,
+          platform: 'Threads',
+          account: username,
+          searchCriteria: searchCriteria,
+          targetPosts: maxPosts
+        });
         
         const results = [];
         let attempts = 0;
