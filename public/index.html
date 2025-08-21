@@ -739,6 +739,81 @@
             border-radius: 4px;
         }
 
+        .service-tallies-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+
+        .tallies-header {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #495057;
+            text-align: center;
+        }
+
+        .tallies-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .tally-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
+
+        .tally-platform {
+            font-weight: 500;
+            color: #495057;
+            font-size: 13px;
+        }
+
+        .tally-count {
+            font-weight: 700;
+            color: #28a745;
+            font-size: 16px;
+            background: #d4edda;
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .total-tally {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #6f42c1;
+            color: white;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+        .total-label {
+            font-size: 15px;
+        }
+
+        .total-count {
+            font-size: 18px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 6px 12px;
+            border-radius: 4px;
+            min-width: 40px;
+            text-align: center;
+        }
+
         .queue-log {
             background: #f1f3f4;
             border-radius: 6px;
@@ -1067,6 +1142,33 @@
                             <div class="progress-row">
                                 <span class="progress-label">Current Step:</span>
                                 <span class="progress-value" id="currentStepDetail">Initializing...</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Service Tallies Section -->
+                        <div class="service-tallies-section">
+                            <h4 class="tallies-header">📊 Comments Posted by Service</h4>
+                            <div class="tallies-grid">
+                                <div class="tally-item">
+                                    <span class="tally-platform">📷 Instagram</span>
+                                    <span class="tally-count" id="instagramTally">0</span>
+                                </div>
+                                <div class="tally-item">
+                                    <span class="tally-platform">🐦 X (Twitter)</span>
+                                    <span class="tally-count" id="xTally">0</span>
+                                </div>
+                                <div class="tally-item">
+                                    <span class="tally-platform">🧵 Threads</span>
+                                    <span class="tally-count" id="threadsTally">0</span>
+                                </div>
+                                <div class="tally-item">
+                                    <span class="tally-platform">🦋 Bluesky</span>
+                                    <span class="tally-count" id="blueskyTally">0</span>
+                                </div>
+                            </div>
+                            <div class="total-tally">
+                                <span class="total-label">Total Comments:</span>
+                                <span class="total-count" id="totalComments">0</span>
                             </div>
                         </div>
                         <div class="queue-log" id="queueLog">
@@ -1611,6 +1713,40 @@
             }
         }
 
+        // Global service tallies tracker
+        const serviceTallies = {
+            instagram: 0,
+            x: 0,
+            threads: 0,
+            bluesky: 0
+        };
+
+        function updateServiceTally(platform, count = 1) {
+            const platformKey = platform.toLowerCase().replace(' (twitter)', '').replace('x (twitter)', 'x');
+            
+            if (serviceTallies.hasOwnProperty(platformKey)) {
+                serviceTallies[platformKey] += count;
+            }
+            
+            // Update UI elements
+            document.getElementById('instagramTally').textContent = serviceTallies.instagram;
+            document.getElementById('xTally').textContent = serviceTallies.x;
+            document.getElementById('threadsTally').textContent = serviceTallies.threads;
+            document.getElementById('blueskyTally').textContent = serviceTallies.bluesky;
+            
+            // Update total
+            const total = Object.values(serviceTallies).reduce((sum, count) => sum + count, 0);
+            document.getElementById('totalComments').textContent = total;
+        }
+
+        function resetServiceTallies() {
+            serviceTallies.instagram = 0;
+            serviceTallies.x = 0;
+            serviceTallies.threads = 0;
+            serviceTallies.bluesky = 0;
+            updateServiceTally('', 0); // Trigger UI update
+        }
+
         async function runQueue() {
             if (postingQueue.length === 0) {
                 updateStatus('No items in queue to run', 'error');
@@ -1619,6 +1755,9 @@
 
             queueCancelled = false;
             showQueueModal();
+            
+            // Reset tallies at start of queue
+            resetServiceTallies();
             
             // Clear previous log
             document.getElementById('queueLog').innerHTML = '';
@@ -1688,6 +1827,12 @@
                                 document.getElementById('successRate').textContent = `${successRate}%`;
                                 
                                 addLogEntry(`📊 Progress: ${data.postsCompleted}/${data.postsTarget} posts completed`, 'success');
+                            }
+                            
+                            // Update service tally if this is a successful comment
+                            if (data.commentSuccess === true && data.platform) {
+                                updateServiceTally(data.platform, 1);
+                                addLogEntry(`🎯 ${data.platform} tally updated: +1 comment`, 'success');
                             }
                             
                             // Update current step detail

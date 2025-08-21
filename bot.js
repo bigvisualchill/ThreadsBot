@@ -2028,6 +2028,18 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         successfulComments++;
         console.log(`✅ COMPLETED: Comment posted successfully (${successfulComments}/${maxPosts})`);
         
+        // Report success progress for X
+        if (reportProgress) {
+          reportProgress(`✅ X (Twitter) comment posted! (${successfulComments}/${maxPosts})`, {
+            current: 40 + (successfulComments / maxPosts) * 50,
+            total: 100,
+            postsCompleted: successfulComments,
+            postsTarget: maxPosts,
+            lastComment: finalComment.slice(0, 50) + '...',
+            commentSuccess: true
+          });
+        }
+        
         results.push({ 
           post: currentPost, 
           success: true, 
@@ -2874,13 +2886,14 @@ export async function runAction(options) {
               console.log(`✅ COMPLETED: Comment posted successfully (${successes}/${targetSuccesses})`);
               
               // Report success progress
-              reportProgress(`✅ Instagram comment posted! (${successes}/${targetSuccesses})`, {
-                current: 40 + (successes / targetSuccesses) * 50,
-                total: 100,
-                postsCompleted: successes,
-                postsTarget: targetSuccesses,
-                lastComment: aiComment.slice(0, 50) + '...'
-              });
+                      reportProgress(`✅ Instagram comment posted! (${successes}/${targetSuccesses})`, {
+          current: 40 + (successes / targetSuccesses) * 50,
+          total: 100,
+          postsCompleted: successes,
+          postsTarget: targetSuccesses,
+          lastComment: aiComment.slice(0, 50) + '...',
+          commentSuccess: true
+        });
               
               // Check if we've reached our target
               if (successes >= targetSuccesses) {
@@ -3100,7 +3113,8 @@ export async function runAction(options) {
                   total: 100,
                   postsCompleted: successes,
                   postsTarget: targetSuccesses,
-                  lastComment: finalComment.slice(0, 50) + '...'
+                  lastComment: finalComment.slice(0, 50) + '...',
+                  commentSuccess: true
                 });
                 
                 // Check if we've reached our target
@@ -3621,6 +3635,18 @@ export async function runAction(options) {
               
               console.log(`✅ COMPLETED: Comment posted successfully (${successfulComments}/${targetComments})`);
               
+              // Report success progress for Threads
+              if (reportProgress) {
+                reportProgress(`✅ Threads comment posted! (${successfulComments}/${targetComments})`, {
+                  current: 40 + (successfulComments / targetComments) * 50,
+                  total: 100,
+                  postsCompleted: successfulComments,
+                  postsTarget: targetComments,
+                  lastComment: aiComment.slice(0, 50) + '...',
+                  commentSuccess: true
+                });
+              }
+              
               if (successfulComments >= targetComments) {
                 break; // Target reached, exit inner loop
               }
@@ -3969,7 +3995,8 @@ export async function runAction(options) {
                 total: 100,
                 postsCompleted: successCount,
                 postsTarget: targetSuccesses,
-                lastComment: finalComment.slice(0, 50) + '...'
+                lastComment: finalComment.slice(0, 50) + '...',
+                commentSuccess: true
               });
               
               // Delay between posts
