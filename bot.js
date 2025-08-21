@@ -1803,6 +1803,19 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
     await page.goto(searchUrl, { waitUntil: 'networkidle2' });
     await sleep(3000); // Let search results load
     
+    // Check if there are any posts on the search page
+    const hasResults = await page.evaluate(() => {
+      const posts = document.querySelectorAll('[data-testid="tweet"]');
+      return posts.length > 0;
+    });
+    
+    if (!hasResults) {
+      console.log(`❌ No posts found for search term: ${searchTerm}`);
+      return { ok: true, message: `No posts found for "${searchTerm}" on X` };
+    }
+    
+    console.log(`✅ Found posts on X search page, starting navigation`);
+    
     let successfulComments = 0;
     let currentPost = 0;
     const results = [];
