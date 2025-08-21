@@ -1780,7 +1780,7 @@ async function clickBackToSearch(page, searchUrl, navigateNext = false) {
 }
 
 // X Keyboard Navigation Auto-Comment System
-async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username }) {
+async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username, reportProgress = () => {} }) {
   try {
     const { hashtag, keywords } = searchCriteria;
     let searchTerm;
@@ -1837,6 +1837,15 @@ async function xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, us
         await page.keyboard.press('Enter');
         await sleep(3000); // Wait for post to load
         
+        // Report progress for each post
+        reportProgress(`📄 Processing X post ${currentPost}...`, {
+          current: 50 + (successfulComments / maxPosts) * 40,
+          total: 100,
+          postsCompleted: successfulComments,
+          postsTarget: maxPosts,
+          currentPost: currentPost
+        });
+
         // Extract post content first
         const postContent = await page.evaluate(() => {
           const tweetText = document.querySelector('[data-testid="tweetText"]');
@@ -3209,7 +3218,24 @@ export async function runAction(options) {
       await ensureXLoggedIn(page, { username, password });
       
       if (action === 'auto-comment') {
-        return await xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username });
+        reportProgress('🔍 Starting X (Twitter) search...', { 
+          current: 40, 
+          total: 100,
+          platform: 'X (Twitter)',
+          account: username,
+          searchCriteria: searchCriteria,
+          targetPosts: maxPosts
+        });
+        
+        const result = await xAutoComment(page, { searchCriteria, maxPosts, useAI, comment, username, reportProgress });
+        
+        reportProgress('🎉 X (Twitter) completed!', {
+          current: 100,
+          total: 100,
+          completed: true
+        });
+        
+        return result;
       }
       
       return { ok: false, message: 'X functionality limited to login and auto-comment' };
@@ -3284,6 +3310,15 @@ export async function runAction(options) {
           
           for (const postUrl of posts) {
           attempts++;
+            
+            // Report progress for each Threads post
+            reportProgress(`📄 Processing Threads post ${attempts}...`, {
+              current: 40 + (successfulComments / targetComments) * 50,
+              total: 100,
+              postsCompleted: successfulComments,
+              postsTarget: targetComments,
+              currentPost: attempts
+            });
             
             try {
               // Get post content for filtering
@@ -3671,6 +3706,15 @@ export async function runAction(options) {
       if (action === 'auto-comment') {
         console.log('🦋 Starting Bluesky auto-comment...');
         
+        reportProgress('🔍 Starting Bluesky search...', { 
+          current: 40, 
+          total: 100,
+          platform: 'Bluesky',
+          account: username,
+          searchCriteria: searchCriteria,
+          targetPosts: maxPosts
+        });
+        
         if (!searchCriteria || (!searchCriteria.hashtag && !searchCriteria.keywords)) {
           return { ok: false, message: 'Search criteria (hashtag or keywords) required for auto-comment' };
         }
@@ -3803,6 +3847,15 @@ export async function runAction(options) {
               try {
                 console.log(`\n🦋 [${successCount + 1}/${targetSuccesses}] Processing: ${postUrl}`);
 
+                // Report progress for each Bluesky post
+                reportProgress(`📄 Processing Bluesky post ${successCount + 1}...`, {
+                  current: 40 + (successCount / targetSuccesses) * 50,
+                  total: 100,
+                  postsCompleted: successCount,
+                  postsTarget: targetSuccesses,
+                  currentPost: successCount + 1
+                });
+
                 // Get post content for filtering
               const postContent = await getPostContent(page, postUrl, platform);
                 console.log(`📄 POST CONTENT: "${postContent.slice(0, 80)}${postContent.length > 80 ? '...' : ''}"`);
@@ -3906,6 +3959,15 @@ export async function runAction(options) {
               
               console.log(`✅ Success! (${successCount}/${targetSuccesses} completed)`);
               
+              // Report success progress
+              reportProgress(`✅ Bluesky comment posted! (${successCount}/${targetSuccesses})`, {
+                current: 40 + (successCount / targetSuccesses) * 50,
+                total: 100,
+                postsCompleted: successCount,
+                postsTarget: targetSuccesses,
+                lastComment: finalComment.slice(0, 50) + '...'
+              });
+              
               // Delay between posts
               if (successCount < targetSuccesses) {
                 console.log('⏳ Waiting before next post...');
@@ -3926,6 +3988,13 @@ export async function runAction(options) {
             // If we've reached our target, break out of discovery loop
             if (successCount >= targetSuccesses) {
               console.log(`🎯 Target reached! ${successCount}/${targetSuccesses} successful comments`);
+              reportProgress(`🎉 Bluesky completed! ${successCount} comments posted`, {
+                current: 95,
+                total: 100,
+                postsCompleted: successCount,
+                postsTarget: targetSuccesses,
+                completed: true
+              });
               break;
             }
 
