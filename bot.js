@@ -2511,7 +2511,9 @@ export async function runAction(options) {
 
   // Progress tracking helper
   const reportProgress = (step, details = {}) => {
+    console.log(`📊 reportProgress called: ${step}`, details);
     if (sendProgress) {
+      console.log(`📡 Sending progress via callback`);
       sendProgress({
         step,
         platform,
@@ -2519,6 +2521,8 @@ export async function runAction(options) {
         sessionName,
         ...details
       });
+    } else {
+      console.log(`⚠️ No sendProgress callback available`);
     }
   };
 

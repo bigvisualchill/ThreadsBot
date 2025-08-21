@@ -64,17 +64,24 @@ app.get('/progress/:sessionId', (req, res) => {
 // Function to send progress updates to connected clients
 function sendProgressUpdate(sessionId, progressData) {
   const connection = progressConnections.get(sessionId);
+  console.log(`📊 Sending progress update to ${sessionId}:`, progressData);
+  
   if (connection) {
     try {
-      connection.write(`data: ${JSON.stringify({
+      const payload = {
         type: 'progress',
         ...progressData,
         timestamp: new Date().toISOString()
-      })}\n\n`);
+      };
+      
+      console.log(`📡 SSE payload:`, payload);
+      connection.write(`data: ${JSON.stringify(payload)}\n\n`);
     } catch (error) {
-      console.log(`Error sending progress update to ${sessionId}:`, error.message);
+      console.log(`❌ Error sending progress update to ${sessionId}:`, error.message);
       progressConnections.delete(sessionId);
     }
+  } else {
+    console.log(`⚠️ No connection found for session ${sessionId}`);
   }
 }
 

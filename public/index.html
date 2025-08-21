@@ -704,6 +704,41 @@
             font-size: 13px;
         }
 
+        .progress-details-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+
+        .progress-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .progress-row:last-child {
+            border-bottom: none;
+        }
+
+        .progress-label {
+            font-weight: 500;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .progress-value {
+            font-weight: 600;
+            color: #6f42c1;
+            font-size: 14px;
+            background: #f8f9fa;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
         .queue-log {
             background: #f1f3f4;
             border-radius: 6px;
@@ -1013,6 +1048,26 @@
                             <div class="action-platform" id="actionPlatform"></div>
                             <div class="action-account" id="actionAccount"></div>
                             <div class="action-details" id="actionDetails"></div>
+                        </div>
+                        
+                        <!-- Enhanced Progress Display -->
+                        <div class="progress-details-section">
+                            <div class="progress-row">
+                                <span class="progress-label">Current Platform:</span>
+                                <span class="progress-value" id="currentPlatform">-</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Posts Processed:</span>
+                                <span class="progress-value" id="postsProgress">0 / 0</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Success Rate:</span>
+                                <span class="progress-value" id="successRate">0%</span>
+                            </div>
+                            <div class="progress-row">
+                                <span class="progress-label">Current Step:</span>
+                                <span class="progress-value" id="currentStepDetail">Initializing...</span>
+                            </div>
                         </div>
                         <div class="queue-log" id="queueLog">
                             <div class="log-entry">Queue processing will begin shortly...</div>
@@ -1593,34 +1648,66 @@
                     const progressSessionId = `queue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                     
                     // Set up Server-Sent Events for real-time progress
+                    console.log(`🔗 Connecting to progress stream: /progress/${progressSessionId}`);
                     const progressSource = new EventSource(`/progress/${progressSessionId}`);
                     
+                    progressSource.onopen = (event) => {
+                        console.log('✅ Progress SSE connection opened');
+                        addLogEntry('📡 Connected to real-time progress tracking', 'info');
+                    };
+                    
                     progressSource.onmessage = (event) => {
+                        console.log('📨 Received progress update:', event.data);
                         const data = JSON.parse(event.data);
                         
-                        if (data.type === 'progress') {
-                            // Update progress with real data from backend
-                            updateProgress(i, pendingItems.length, data.step, item);
-                            addLogEntry(data.step.replace(/[🌐🔐🔍📝📊🤖💬❤️✅🔄📈]/g, '').trim(), 'info');
+                        if (data.type === 'connected') {
+                            addLogEntry('🔗 Progress tracking connected', 'success');
+                        } else if (data.type === 'progress') {
+                            console.log('🔄 Processing progress data:', data);
+                            
+                            // Update the current step display
+                            document.getElementById('currentStep').textContent = data.step || 'Processing...';
+                            
+                            // Update enhanced progress details
+                            if (data.platform) {
+                                document.getElementById('currentPlatform').textContent = data.platform;
+                                document.getElementById('actionPlatform').textContent = data.platform;
+                            }
+                            
+                            if (data.account) {
+                                document.getElementById('actionAccount').textContent = `Account: ${data.account}`;
+                            }
+                            
+                            // Update posts progress
+                            if (data.postsCompleted !== undefined && data.postsTarget !== undefined) {
+                                document.getElementById('progressCounter').textContent = `${data.postsCompleted} / ${data.postsTarget}`;
+                                document.getElementById('postsProgress').textContent = `${data.postsCompleted} / ${data.postsTarget}`;
+                                
+                                // Calculate and display success rate
+                                const successRate = data.postsTarget > 0 ? Math.round((data.postsCompleted / data.postsTarget) * 100) : 0;
+                                document.getElementById('successRate').textContent = `${successRate}%`;
+                                
+                                addLogEntry(`📊 Progress: ${data.postsCompleted}/${data.postsTarget} posts completed`, 'success');
+                            }
+                            
+                            // Update current step detail
+                            document.getElementById('currentStepDetail').textContent = data.step || 'Processing...';
                             
                             // Update progress bar with real percentage
                             if (data.current !== undefined && data.total !== undefined) {
-                                const itemProgress = (data.current / data.total) * 100;
-                                const overallProgress = (i / pendingItems.length * 100) + (itemProgress / pendingItems.length);
-                                
-                                document.getElementById('progressFill').style.width = `${Math.min(overallProgress, 95)}%`;
-                                document.getElementById('progressPercent').textContent = `${Math.round(overallProgress)}%`;
+                                const percentage = Math.round(data.current);
+                                document.getElementById('progressFill').style.width = `${Math.min(percentage, 95)}%`;
+                                document.getElementById('progressPercent').textContent = `${percentage}%`;
                             }
                             
-                            // Show posts completed if available
-                            if (data.postsCompleted !== undefined && data.postsTarget !== undefined) {
-                                addLogEntry(`Progress: ${data.postsCompleted}/${data.postsTarget} posts completed`, 'success');
-                            }
+                            // Add log entry for the step
+                            addLogEntry(data.step.replace(/[🌐🔐🔍📝📊🤖💬❤️✅🔄📈]/g, '').trim(), 'info');
                         }
                     };
                     
                     progressSource.onerror = (error) => {
-                        console.log('Progress connection error:', error);
+                        console.error('❌ Progress connection error:', error);
+                        addLogEntry('❌ Progress tracking connection lost', 'error');
                         progressSource.close();
                     };
                     
@@ -1642,22 +1729,27 @@
                         })
                     });
 
-                    // Test API connectivity first with a quick timeout
+                    // Test API connectivity and wait for completion
                     let response;
                     try {
-                        response = await Promise.race([
-                            requestPromise,
+                        // Test connection first
+                        const testResponse = await Promise.race([
+                            fetch('/health'),
                             new Promise((_, reject) => setTimeout(() => reject(new Error('Server timeout - check if server is running')), 5000))
                         ]);
                         
-                        // If API call succeeds, wait for real progress via SSE
+                        if (!testResponse.ok) {
+                            throw new Error('Server not responding');
+                        }
+                        
+                        // If server is up, start the actual request and wait for completion
                         addLogEntry(`✅ Connected to server, starting ${item.platformName} automation...`, 'info');
                         
-                        // Wait for the actual API response (progress updates via SSE)
-                        await response;
+                        // Now wait for the actual automation to complete
+                        response = await requestPromise;
                         
                     } catch (connectError) {
-                        // API call failed quickly - don't run progress simulation
+                        // API call failed quickly
                         addLogEntry(`❌ Server connection failed: ${connectError.message}`, 'error');
                         addLogEntry(`💡 Try restarting the server with start.command`, 'info');
                         throw connectError;
