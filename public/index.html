@@ -1636,6 +1636,18 @@
             const modal = document.getElementById('queueModal');
             modal.style.display = 'none';
             document.body.style.overflow = 'auto'; // Restore scrolling
+            
+            // Reset the cancel button back to normal state
+            document.getElementById('cancelQueue').textContent = 'Cancel Queue';
+            document.getElementById('cancelQueue').style.backgroundColor = '#dc3545';
+            document.getElementById('cancelQueue').onclick = () => {
+                queueCancelled = true;
+                addLogEntry('Cancelling queue processing...', 'error');
+                setTimeout(() => hideQueueModal(), 1000);
+            };
+            
+            // Restore the queue display
+            updateQueueDisplay();
         }
 
         function updateProgress(current, total, step, item = null) {
@@ -1759,11 +1771,26 @@
             // Reset tallies at start of queue
             resetServiceTallies();
             
+            // Clear the queue display since processing has started
+            const queueList = document.getElementById('queueList');
+            queueList.innerHTML = `
+                <div class="empty-queue">
+                    <p>🚀 Queue is now running!</p>
+                    <p><small>Queue items have been moved to processing. Check progress above.</small></p>
+                </div>
+            `;
+            document.getElementById('queueCount').textContent = 'Queue processing in progress';
+            
             // Clear previous log
             document.getElementById('queueLog').innerHTML = '';
             addLogEntry('Queue processing started', 'info');
 
             const pendingItems = postingQueue.filter(item => item.status !== 'completed');
+            
+            // Clear the queue from storage since we're processing it now
+            postingQueue = [];
+            localStorage.setItem('postingQueue', JSON.stringify(postingQueue));
+            
             updateProgress(0, pendingItems.length, 'Initializing queue...');
 
             for (let i = 0; i < pendingItems.length; i++) {
@@ -1950,11 +1977,12 @@
             if (!queueCancelled) {
                 updateProgress(pendingItems.length, pendingItems.length, '🎉 Queue processing completed!');
                 addLogEntry('🎉 All queue items processed!', 'success');
+                addLogEntry('📋 Progress monitor will stay open - click Close to dismiss', 'info');
                 
-                // Auto-close modal after 3 seconds
-                setTimeout(() => {
-                    hideQueueModal();
-                }, 3000);
+                // Change button text to indicate completion
+                document.getElementById('cancelQueue').textContent = 'Close';
+                document.getElementById('cancelQueue').style.backgroundColor = '#28a745';
+                document.getElementById('cancelQueue').onclick = () => hideQueueModal();
             }
         }
 
