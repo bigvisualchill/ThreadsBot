@@ -3231,7 +3231,7 @@ export async function runAction(options) {
               await page.goto(postUrl, { waitUntil: 'networkidle2' });
               await sleep(2000);
               
-              const hasVideo = await page.evaluate(() => {
+              const videoCheck = await page.evaluate(() => {
                 // Look for video elements in Threads
                 const videoSelectors = [
                   'video',
@@ -3241,23 +3241,30 @@ export async function runAction(options) {
                   '.video-player'
                 ];
                 
+                let foundSelector = null;
                 for (const selector of videoSelectors) {
                   if (document.querySelector(selector)) {
-                    return true;
+                    foundSelector = selector;
+                    break;
                   }
                 }
                 
-                // Check for video indicators in Threads
-                const pageText = document.body.textContent.toLowerCase();
-                if (pageText.includes('video') && (pageText.includes('play') || pageText.includes('watch'))) {
-                  return true;
-                }
+                // Check for video indicators in Threads (more specific)
+                // Look for actual video controls, not just text mentioning video
+                const videoControls = document.querySelector('[aria-label*="play video" i]') ||
+                                    document.querySelector('[aria-label*="video player" i]') ||
+                                    document.querySelector('[data-testid*="video"]') ||
+                                    document.querySelector('.video-controls');
                 
-                return false;
+                return {
+                  hasVideo: !!(foundSelector || videoControls),
+                  foundSelector,
+                  hasVideoControls: !!videoControls
+                };
               });
               
-              if (hasVideo) {
-                console.log(`⏭️  SKIP: Post contains video content → ${postUrl}`);
+              if (videoCheck.hasVideo) {
+                console.log(`⏭️  SKIP: Post contains video content (${videoCheck.foundSelector || 'video controls'}) → ${postUrl}`);
                 results.push({ url: postUrl, success: false, error: 'Post contains video' });
                 continue;
               }
