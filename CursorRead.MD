@@ -2,11 +2,11 @@
 
 ## 1. Application Overview
 
-**Puppeteer Social** is a sophisticated social media automation bot built with Node.js and Puppeteer that enables intelligent, AI-powered interactions on Instagram, X (Twitter), Threads, and Bluesky. The application combines browser automation with OpenAI's GPT models to create contextual, human-like social media engagement.
+**Puppeteer Social** is a sophisticated social media automation bot built with Node.js and Puppeteer that enables intelligent, AI-powered interactions on Threads. The application combines browser automation with OpenAI's GPT models to create contextual, human-like social media engagement.
 
 ### Core Functionality
 
-- **Multi-Platform Support**: Automated interactions on Instagram, X (Twitter), Threads, and Bluesky
+- **Threads Platform Support**: Automated interactions on Threads
 - **AI-Powered Comments**: Integration with OpenAI's Assistants API for intelligent, contextual comment generation
 - **Session Management**: Persistent login sessions with multi-account support
 - **Smart Discovery**: Hashtag and keyword-based post discovery with duplicate prevention
@@ -136,15 +136,15 @@ The application is feature-complete with:
 ### File Structure
 ```
 Puppeteer Social/
-├── bot.js                      # Core automation engine
+├── bot.js                      # Core automation engine (Threads only)
 ├── index.js                    # CLI interface
 ├── server.js                   # Web server and API
 ├── package.json                # Dependencies and scripts
 ├── public/
-│   └── index.html             # Web interface
+│   └── index.html             # Web interface (Threads only)
 ├── utils/
-│   ├── igHasMyComment.js      # Comment detection utilities
-│   └── commented-posts.json   # Comment cache
+│   ├── threadsHasMyComment.js # Threads comment detection utilities
+│   └── threads-commented-posts.json # Threads comment cache
 ├── .sessions/                  # Stored login sessions
 ├── env-example.txt            # Environment configuration template
 ├── start.command              # macOS startup script
@@ -1125,3 +1125,55 @@ After: Account dropdown shows all platforms simultaneously
 **Current State**: The application now features robust multi-platform session management with complete isolation between platforms, preventing session conflicts and browser crashes. Users can simultaneously maintain login sessions for Instagram, Threads, X (Twitter), and Bluesky with the same account names. Bluesky authentication is significantly more reliable with the simplified settings page approach and robust form submission handling. The account dropdown properly displays all logged-in platforms, and platform contexts ensure sessions persist across different operation modes without interference.
 
 **Git Commit**: `36b5761` - "Major Platform Context Isolation & Session Management Overhaul"
+
+---
+
+### Threads-Only Conversion Phase
+
+**Date**: January 2025  
+**Focus**: Complete removal of all platforms except Threads to simplify the application and focus on core functionality
+
+**Major Changes**:
+
+1. **Platform Removal**:
+   - **Instagram**: Removed all Instagram functions and dependencies
+   - **X (Twitter)**: Removed all X/Twitter functions and dependencies  
+   - **Bluesky**: Removed all Bluesky functions and dependencies
+   - **Threads**: Kept as the only supported platform
+
+2. **Code Cleanup**:
+   - **bot.js**: Completely rewritten to only handle Threads platform
+   - **Frontend**: Updated to only show Threads platform option
+   - **Server**: Simplified to only handle Threads authentication
+   - **Dependencies**: Removed platform-specific files and utilities
+
+3. **File Structure Changes**:
+   - **Removed**: `instagram-functions.js`, `bluesky-funcs.js`, `utils/igHasMyComment.js`
+   - **Kept**: `threads-functions.js`, `utils/threadsHasMyComment.js`
+   - **Updated**: All platform detection logic to only handle Threads
+
+4. **Login Methodology Preservation**:
+   - **Session Management**: Maintained the same session storage and retrieval system
+   - **Authentication Flow**: Preserved the same login detection and verification logic
+   - **Browser Contexts**: Kept the same browser context isolation architecture
+   - **Error Handling**: Maintained comprehensive error handling and logging
+
+5. **User Experience**:
+   - **Simplified Interface**: Only Threads platform option available
+   - **Streamlined Workflow**: No platform selection confusion
+   - **Focused Functionality**: All features optimized for Threads
+
+**Technical Implementation**:
+- **Platform Validation**: Updated to only accept 'threads' as valid platform
+- **Session Storage**: Maintained `session_threads_username` format
+- **API Endpoints**: Simplified to only handle Threads-specific operations
+- **Frontend Logic**: Removed all multi-platform conditional logic
+
+**Benefits Achieved**:
+- ✅ **Simplified Codebase**: Reduced complexity by removing 3 platforms
+- ✅ **Focused Development**: All resources dedicated to Threads optimization
+- ✅ **Reduced Maintenance**: No need to maintain multiple platform integrations
+- ✅ **Better Performance**: Smaller codebase with fewer dependencies
+- ✅ **Easier Debugging**: Single platform focus makes troubleshooting simpler
+
+**Current State**: The application is now a dedicated Threads automation tool with all the same powerful features (AI commenting, session management, duplicate detection) but focused exclusively on the Threads platform. The login methodology and core architecture remain unchanged, ensuring reliability and consistency.

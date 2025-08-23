@@ -1,0 +1,6 @@
+// ===== THREADS FUNCTIONS =====
+// Extracted to prevent cross-platform corruption
+
+// Import shared utilities that Threads functions depend on
+import { sleep, tryClickByText } from './bot.js';
+

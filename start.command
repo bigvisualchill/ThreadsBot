@@ -1,5 +1,5 @@
 #!/bin/zsh
-cd "/Users/mbp/Desktop/Puppeteer Social"
+cd "/Users/mbp/Desktop/Threads Puppet"
 
 # Kill any existing Node.js processes to ensure fresh start
 echo "🔄 Killing existing Node.js processes..."

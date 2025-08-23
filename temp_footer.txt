@@ -1,0 +1,206 @@
+async function threadsLike(page, threadUrl) {
+  console.log(`❤️ Attempting to like Threads post: ${threadUrl}`);
+  await page.goto(threadUrl, { waitUntil: 'networkidle2' });
+  await sleep(1000); // Wait for page to fully load
+  
+  // Look for like button using multiple strategies
+  const likeSelectors = [
+    '[aria-label="Like"]',
+    '[data-testid="like-button"]',
+    'button[aria-label*="like"]',
+    '[role="button"][aria-label*="Like"]'
+  ];
+  
+  let liked = false;
+  for (const selector of likeSelectors) {
+    try {
+      const likeButton = await page.$(selector);
+      if (likeButton) {
+        await likeButton.click();
+        console.log(`✅ Threads post liked using selector: ${selector}`);
+        liked = true;
+        break;
+      }
+    } catch (error) {
+      console.log(`Failed to click like with selector ${selector}: ${error.message}`);
+    }
+  }
+  
+  if (!liked) {
+    // Try text-based approach as fallback
+    const textLiked = await tryClickByText(page, ['Like', 'Heart']);
+    if (textLiked) {
+      console.log('✅ Threads post liked using text-based approach');
+      liked = true;
+    }
+  }
+  
+  if (!liked) {
+    throw new Error('Could not find or click like button on Threads post');
+  }
+  
+  await sleep(1000); // Wait for like action to complete
+  return { success: true };
+}
+
+async function threadsComment(page, threadUrl, comment) {
+  console.log(`💬 Attempting to comment on Threads post: ${threadUrl}`);
+  console.log(`Comment text: "${comment}"`);
+  
+  await page.goto(threadUrl, { waitUntil: 'networkidle2' });
+  await sleep(1000);
+  
+  // Look for reply/comment button
+  const replySelectors = [
+    '[aria-label="Reply"]',
+    '[data-testid="reply-button"]',
+    'button[aria-label*="reply"]',
+    '[role="button"][aria-label*="Reply"]'
+  ];
+  
+  let replyClicked = false;
+  for (const selector of replySelectors) {
+    try {
+      const replyButton = await page.$(selector);
+      if (replyButton) {
+        await replyButton.click();
+        console.log(`✅ Reply button clicked using selector: ${selector}`);
+        replyClicked = true;
+        break;
+      }
+    } catch (error) {
+      console.log(`Failed to click reply with selector ${selector}: ${error.message}`);
+    }
+  }
+  
+  if (!replyClicked) {
+    // Try text-based approach
+    const textReplyClicked = await tryClickByText(page, ['Reply', 'Comment']);
+    if (textReplyClicked) {
+      console.log('✅ Reply button clicked using text-based approach');
+      replyClicked = true;
+    }
+  }
+  
+  if (!replyClicked) {
+    throw new Error('Could not find or click reply button on Threads post');
+  }
+  
+  await sleep(2000); // Wait for comment box to appear
+  
+  // Look for comment text area
+  const textareaSelectors = [
+    'textarea[placeholder*="reply"]',
+    'textarea[placeholder*="comment"]',
+    'textarea[aria-label*="reply"]',
+    'textarea[data-testid*="comment"]',
+    'div[contenteditable="true"]',
+    'textarea'
+  ];
+  
+  let commented = false;
+  for (const selector of textareaSelectors) {
+    try {
+      const textarea = await page.$(selector);
+      if (textarea) {
+        await textarea.click();
+        await textarea.type(comment, { delay: 50 });
+        console.log(`✅ Comment typed using selector: ${selector}`);
+        
+        // Look for submit button
+        const submitSelectors = [
+          'button[type="submit"]',
+          '[data-testid="post-button"]',
+          'button[aria-label*="post"]',
+          'button[aria-label*="reply"]'
+        ];
+        
+        let submitted = false;
+        for (const submitSelector of submitSelectors) {
+          try {
+            const submitButton = await page.$(submitSelector);
+            if (submitButton) {
+              await submitButton.click();
+              console.log(`✅ Comment submitted using selector: ${submitSelector}`);
+              submitted = true;
+              break;
+            }
+          } catch (error) {
+            console.log(`Failed to submit with selector ${submitSelector}: ${error.message}`);
+          }
+        }
+        
+        if (!submitted) {
+          // Try keyboard shortcut
+          await page.keyboard.down('Meta');
+          await page.keyboard.press('Enter');
+          await page.keyboard.up('Meta');
+          console.log('✅ Comment submitted using Cmd+Enter');
+        }
+        
+        commented = true;
+        break;
+      }
+    } catch (error) {
+      console.log(`Failed to use textarea selector ${selector}: ${error.message}`);
+    }
+  }
+  
+  if (!commented) {
+    throw new Error('Could not find comment textarea on Threads post');
+  }
+  
+  await sleep(2000); // Wait for comment to post
+  console.log('✅ Threads comment posted successfully');
+  return { success: true };
+}
+
+async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
+  console.log(`🧵 Starting Threads post discovery for: ${JSON.stringify(searchCriteria)}`);
+  
+  const { hashtag, keywords } = searchCriteria;
+  let searchQuery = hashtag || keywords;
+  
+  if (!searchQuery) {
+    throw new Error('Either hashtag or keywords must be provided for Threads search');
+  }
+  
+  // Use the correct Threads search URL format with recent sorting
+  const searchUrl = `https://www.threads.net/search?q=${encodeURIComponent(searchQuery)}&serp_type=recent`;
+  console.log(`🔍 Navigating to Threads search (recent): ${searchUrl}`);
+  
+  await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+  await sleep(3000); // Wait for search results to load
+  
+  // Extract post URLs from search results
+  const postUrls = await page.evaluate(() => {
+    const links = document.querySelectorAll('a[href*="/post/"]');
+    const urls = [];
+    
+    links.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href && href.includes('/post/')) {
+        const fullUrl = href.startsWith('http') ? href : `https://www.threads.net${href}`;
+        urls.push(fullUrl);
+      }
+    });
+    
+    return [...new Set(urls)]; // Remove duplicates
+  });
+  
+  console.log(`🧵 Found ${postUrls.length} potential Threads posts`);
+  
+  // Limit to requested number of posts
+  const limitedPosts = postUrls.slice(0, maxPosts);
+  console.log(`🧵 Returning ${limitedPosts.length} posts (limited to ${maxPosts})`);
+  
+  return limitedPosts;
+}
+
+// Export all functions
+export {
+  ensureThreadsLoggedIn,
+  threadsLike,
+  threadsComment,
+  discoverThreadsPosts
+};

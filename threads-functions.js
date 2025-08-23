@@ -5,16 +5,15 @@
 import { sleep, tryClickByText } from './bot.js';
 
 async function ensureThreadsLoggedIn(page, { username, password }) {
+  try {
   console.log('🧵 === THREADS LOGIN START ===');
   console.log('🧵 Function called with username:', !!username, 'password:', !!password);
   
-  try {
+    // Navigate to Threads
     console.log('🧵 Step 1: About to navigate to threads.net...');
-    
-    // Add timeout to navigation to prevent hanging
     const navigationPromise = page.goto('https://www.threads.net/', { 
       waitUntil: 'networkidle2',
-      timeout: 30000 // 30 second timeout
+      timeout: 30000
     });
     
     console.log('🧵 Navigation promise created, waiting...');
@@ -24,235 +23,218 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
     } catch (navError) {
       console.log('🧵 ❌ Navigation failed:', navError.message);
       console.log('🧵 Current URL after nav failure:', page.url());
-      // Continue anyway to see what we can do
     }
     
     await sleep(2000);
     console.log('🧵 Step 2: Current URL after navigation:', page.url());
 
-    // 2) If already logged in, bail early
-    console.log('🧵 Step 3: About to check login status...');
-    const already = await page.evaluate(() => {
-      console.log('🧵 Step 3a: Inside page.evaluate - checking login status...');
-      console.log('🧵 Current URL:', window.location.href);
-      console.log('🧵 Page title:', document.title);
-      console.log('🧵 Document ready state:', document.readyState);
-      
-      // Check for actual navigation elements that indicate we're logged in
-      const navSelectors = ['[aria-label="Home"]','[aria-label="Search"]','[aria-label="Activity"]','[aria-label="Profile"]'];
-      let foundNav = false;
-      for (const sel of navSelectors) {
-        const element = document.querySelector(sel);
-        if (element) {
-          console.log('🧵 Found nav element:', sel);
-          foundNav = true;
-          break;
-        }
-      }
-      
-      // Also check for login/signup buttons (indicates NOT logged in)
-      const loginButtons = document.querySelectorAll('button, a');
-      let hasLoginButtons = false;
-      for (const button of loginButtons) {
-        const text = button.textContent?.toLowerCase() || '';
-        if (text.includes('log in') || text.includes('sign up')) {
-          console.log('🧵 Found login button:', text.trim());
-          hasLoginButtons = true;
-          break;
-        }
-      }
-      
-      const loggedIn = foundNav && !hasLoginButtons;
-      console.log('🧵 Has nav elements:', foundNav);
-      console.log('🧵 Has login buttons:', hasLoginButtons);
-      console.log('🧵 Final determination - already logged in:', loggedIn);
-      
-      return loggedIn;
-    });
-    if (already) {
-      console.log('✅ Already logged into Threads');
-      return true;
-    }
-    
-    console.log('🔐 Not logged in - proceeding with login flow');
+    // Try direct navigation to login page first
+    console.log('🔐 Trying direct navigation to login page...');
+    try {
+      await page.goto('https://www.threads.com/login', { waitUntil: 'networkidle2', timeout: 30000 });
+      console.log('🔐 ✅ Successfully navigated to login page');
+      console.log('🔐 Current URL:', page.url());
+    } catch (navError) {
+      console.log('🔐 ❌ Direct navigation failed:', navError.message);
 
-    if (!username || !password) {
-      console.log('❌ Missing credentials:');
-      console.log('   Username provided:', !!username);
-      console.log('   Password provided:', !!password);
-      throw new Error('Threads session missing and no credentials provided. Provide username/password or login headfully and save a session.');
-    }
-    
-    console.log('✅ Credentials available, proceeding with Instagram SSO login...');
-
-    // 3) Click "Continue with Instagram" (the main login button)
-    console.log('🔐 Looking for Instagram login button...');
-    
-    // First, let's see what buttons are available
-    const availableButtons = await page.evaluate(() => {
-      const buttons = document.querySelectorAll('button, a, div[role="button"]');
-      const buttonInfo = [];
-      for (const btn of buttons) {
-        const text = (btn.textContent || '').trim();
-        const visible = btn.offsetParent !== null;
-        if (text && visible) {
-          buttonInfo.push({
-            text: text,
-            tagName: btn.tagName,
-            className: btn.className,
-            visible: visible
-          });
-        }
-      }
-      return buttonInfo;
-    });
-    
-    console.log('🔐 Available clickable elements:', availableButtons.filter(b => 
-      b.text.toLowerCase().includes('instagram') || 
-      b.text.toLowerCase().includes('continue') ||
-      b.text.toLowerCase().includes('log in')
-    ));
-    
-    // Try multiple methods to click the Instagram button
-    let instagramClicked = false;
-    
-    // Method 1: Try our existing text-based clicking
-    instagramClicked = await tryClickByText(page, [
-      'Continue with Instagram',
-      'Log in with Instagram',
-      'Instagram'
-    ]);
-    
-    if (!instagramClicked) {
-      // Method 2: Try direct selector approach
-      console.log('🔐 Text-based click failed, trying direct selectors...');
-      try {
-        const instagramButton = await page.$('button:has-text("Continue with Instagram")') ||
-                               await page.$('a:has-text("Continue with Instagram")') ||
-                               await page.$('[aria-label*="Instagram"]') ||
-                               await page.$('[data-testid*="instagram"]');
-        
-        if (instagramButton) {
-          await instagramButton.click();
-          instagramClicked = true;
-          console.log('🔐 Clicked Instagram button using direct selector');
-        }
-      } catch (error) {
-        console.log('🔐 Direct selector method failed:', error.message);
-      }
-    }
-    
-    if (!instagramClicked) {
-      // Method 3: Try coordinate-based clicking
-      console.log('🔐 Selector methods failed, trying coordinate-based clicking...');
-      try {
-        const buttonCoords = await page.evaluate(() => {
-          const buttons = document.querySelectorAll('button, a, div[role="button"]');
-          for (const btn of buttons) {
-            const text = (btn.textContent || '').trim().toLowerCase();
-            if (text.includes('continue with instagram') || text.includes('instagram')) {
-              const rect = btn.getBoundingClientRect();
-              return {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2,
-                text: text
-              };
-            }
-          }
-          return null;
-        });
-        
-        if (buttonCoords) {
-          console.log('🔐 Found Instagram button at coordinates:', buttonCoords);
-          await page.mouse.click(buttonCoords.x, buttonCoords.y);
-          instagramClicked = true;
-          console.log('🔐 Clicked Instagram button using coordinates');
-        }
-      } catch (error) {
-        console.log('🔐 Coordinate-based clicking failed:', error.message);
-      }
-    }
-    
-    if (instagramClicked) {
-      console.log('🔐 Instagram button clicked successfully, waiting for navigation...');
-      try {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
-        console.log('🔐 Navigated to:', page.url());
-      } catch (navError) {
-        console.log('🔐 Navigation timeout, checking current URL:', page.url());
-      }
-    } else {
-      // Fallback to username option
-      console.log('🔐 All Instagram button click methods failed, trying username option...');
+      // Fallback: Try clicking the username login button
+      console.log('🔐 Falling back to clicking username login button...');
       const usernameClicked = await tryClickByText(page, [
         'Log in with username instead',
         'Log in with username',
-        'Use username'
+        'Use username',
+        'Log in'
       ]);
-      if (!usernameClicked) {
-        throw new Error('Could not find any working login button.');
+
+      if (usernameClicked) {
+        console.log('🔐 ✅ Clicked username login option');
+
+        // Wait for navigation after clicking
+        try {
+          await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+          console.log('🔐 ✅ Navigation completed after button click');
+          console.log('🔐 Current URL:', page.url());
+        } catch (navError) {
+          console.log('🔐 ❌ No navigation after button click');
+          console.log('🔐 Current URL:', page.url());
+        }
+      } else {
+        console.log('🔐 ❌ Could not find or click username login button');
+        throw new Error('Could not access login page via any method');
       }
-      console.log('🔐 Clicked username login, waiting for form...');
-      await sleep(2000);
     }
-    
-    console.log('🔐 After login click, current URL:', page.url());
-    
-    // Check if we have username/password fields now
-    const hasLoginForm = await page.evaluate(() => {
-      const usernameField = document.querySelector('input[name="username"]');
-      const passwordField = document.querySelector('input[name="password"]');
-      console.log('🔐 Username field found:', !!usernameField);
-      console.log('🔐 Password field found:', !!passwordField);
-      return !!(usernameField && passwordField);
+
+    // Wait for form to load
+    await sleep(3000);
+    console.log('🔐 Login form should be visible, proceeding with credentials...');
+    console.log('🔐 Current URL before form check:', page.url());
+
+    // Take a screenshot to see what the page looks like
+    try {
+      await page.screenshot({ path: 'debug-after-login-navigation.png', fullPage: true });
+      console.log('🔐 📸 Screenshot taken: debug-after-login-navigation.png');
+    } catch (screenshotError) {
+      console.log('🔐 Screenshot failed:', screenshotError.message);
+    }
+
+    // Debug: Check what elements are actually on the page
+    const pageElements = await page.evaluate(() => {
+      const allInputs = document.querySelectorAll('input');
+      const inputs = Array.from(allInputs).map(input => ({
+        type: input.type,
+        name: input.name,
+        placeholder: input.placeholder,
+        id: input.id,
+        className: input.className
+      }));
+
+      const allButtons = document.querySelectorAll('button, [role="button"], input[type="submit"]');
+      const buttons = Array.from(allButtons).map(btn => ({
+        text: btn.textContent?.trim(),
+        type: btn.type,
+        name: btn.name,
+        tagName: btn.tagName
+      }));
+
+      return { inputs, buttons };
     });
-    
-    if (!hasLoginForm) {
-      throw new Error('Could not find login form after clicking login options.');
-    }
-    
-    console.log('🔐 Login form is visible, proceeding with credentials...');
 
-    // Check if we need to navigate to Instagram or if we're already on a login form
-    console.log('🔐 Current URL after navigation:', page.url());
-    
-    if (!/instagram\.com/i.test(page.url()) && !page.url().includes('login')) {
-      // Try to follow any "Continue with Instagram" link on intermediate screens
-      const continueClicked = await tryClickByText(page, ['Instagram', 'Continue']);
-      if (continueClicked) {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
-      }
-    }
+    console.log('🔐 Found inputs on page:', pageElements.inputs);
+    console.log('🔐 Found buttons on page:', pageElements.buttons);
 
-    // 5) Fill credentials (works for both Instagram and Threads login forms)
+    // Find username field
     console.log('🔐 Looking for username field...');
-    await page.waitForSelector('input[name="username"]', { timeout: 60000 });
-    console.log('🔐 Found username field, typing username...');
-    await page.type('input[name="username"]', username, { delay: 20 });
+    let usernameSelector = null;
+    const usernameSelectors = [
+      'input[name="username"]',
+      'input[name="email"]',
+      'input[placeholder*="email"]',
+      'input[placeholder*="Email"]',
+      'input[type="email"]',
+      'input[placeholder*="username"]',
+      'input[placeholder*="Username"]',
+      'input[type="text"]', // Fallback to any text input
+      'input:not([type="password"])' // Any non-password input
+    ];
 
-    console.log('🔐 Looking for password field...');
-    await page.waitForSelector('input[name="password"]', { timeout: 60000 });
-    console.log('🔐 Found password field, typing password...');
-    await page.type('input[name="password"]', password, { delay: 20 });
-
-    // Submit
-    const loginSubmit = await page.$('button[type="submit"]');
-    if (loginSubmit) {
-      await loginSubmit.click();
-      console.log('🔐 Clicked Instagram login submit button');
-    } else {
-      // Try to find login button by text
-      const submitClicked = await tryClickByText(page, ['Log in', 'Log In']);
-      if (!submitClicked) {
-        throw new Error('Instagram login button not found.');
+    for (const selector of usernameSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        usernameSelector = selector;
+        console.log('🔐 Found username field with selector:', selector);
+        break;
+      } catch (e) {
+        // Continue to next selector
       }
-      console.log('🔐 Clicked Instagram login button by text');
     }
 
-    // 6) Wait for post-login navigation
-    await sleep(1500);
+    if (!usernameSelector) {
+      console.log('🔐 ❌ Could not find username field with any selector');
+      throw new Error('Could not find username field');
+    }
+    console.log('🔐 Found username field with selector:', usernameSelector);
 
-    // 7) Wait for potential navigation after login (may not happen)
+    // Find password field
+    console.log('🔐 Looking for password field...');
+    let passwordSelector = null;
+    const passwordSelectors = [
+      'input[name="password"]',
+      'input[type="password"]',
+      'input[placeholder*="password"]',
+      'input[placeholder*="Password"]',
+      'input[type="text"]:nth-of-type(2)', // Second text input as fallback
+      'input:nth-of-type(2)' // Second input element as fallback
+    ];
+
+    for (const selector of passwordSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: 5000 });
+        passwordSelector = selector;
+        console.log('🔐 Found password field with selector:', selector);
+        break;
+      } catch (e) {
+        // Continue to next selector
+      }
+    }
+
+    if (!passwordSelector) {
+      console.log('🔐 ❌ Could not find password field with any selector');
+      throw new Error('Could not find password field');
+    }
+
+    // Type credentials
+    console.log('🔐 Typing username...');
+    await page.type(usernameSelector, username, { delay: 20 });
+
+    console.log('🔐 Typing password...');
+    await page.type(passwordSelector, password, { delay: 20 });
+
+    // Submit form
+    console.log('🔐 Pressing Enter key to submit form...');
+    await page.keyboard.press('Enter');
+    console.log('🔐 ✅ Enter key pressed');
+
+    await sleep(2000);
+
+    // Check if Enter key worked
+    await sleep(2000); // Wait a bit for submission to process
+    const afterEnterState = await page.evaluate(() => {
+      const stillHasPasswordField = !!document.querySelector('input[type="password"]');
+      const currentUrl = window.location.href;
+      const allInputs = Array.from(document.querySelectorAll('input')).map(input => ({
+        type: input.type,
+        name: input.name,
+        placeholder: input.placeholder
+      }));
+      console.log('🔐 After Enter key - URL:', currentUrl);
+      console.log('🔐 After Enter key - Password field still present:', stillHasPasswordField);
+      console.log('🔐 After Enter key - All inputs:', allInputs);
+      return { stillHasPasswordField, currentUrl, allInputs };
+    });
+
+    if (afterEnterState.stillHasPasswordField) {
+      console.log('🔐 ⚠️ Password field still present - trying alternative submission...');
+
+      // Take a screenshot to see the current state
+      try {
+        await page.screenshot({ path: 'debug-after-enter-key.png', fullPage: true });
+        console.log('🔐 📸 Screenshot taken: debug-after-enter-key.png');
+      } catch (screenshotError) {
+        console.log('🔐 Screenshot failed:', screenshotError.message);
+      }
+
+      // Try button click
+      const submitClicked = await tryClickByText(page, ['Log in', 'Log In', 'Login', 'Sign in', 'Submit']);
+      if (submitClicked) {
+        console.log('🔐 ✅ Clicked login button by text');
+      } else {
+        // Try form submission
+        try {
+          await page.evaluate(() => {
+            const forms = document.querySelectorAll('form');
+            for (const form of forms) {
+              if (form.querySelector('input[type="password"]')) {
+                console.log('🔐 Found form with password field, submitting...');
+                form.submit();
+                return true;
+              }
+            }
+            return false;
+          });
+          console.log('🔐 ✅ Submitted form programmatically');
+        } catch (formError) {
+          console.log('🔐 ❌ Form submission failed:', formError.message);
+          throw new Error('Could not submit login form');
+        }
+      }
+    } else {
+      console.log('🔐 ✅ Enter key submission appears to have worked');
+    }
+
+    // Wait for form submission to process
+    await sleep(2000);
+
+    // Check for post-login navigation
     try {
       await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
       console.log('🔐 Navigation detected after login');
@@ -262,13 +244,8 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
     
     console.log('🔐 After login submit, current URL:', page.url());
     
-    // Handle post-login flow (may include save login info, OAuth consent, etc.)
-    await sleep(1000);
-    
-    // Handle "Save login info" / one-tap (no :contains selectors)
+    // Handle post-login prompts
     await tryClickByText(page, ['Not now', "Don't save", 'Skip', 'Later']);
-    
-    // Handle OAuth consent
     await tryClickByText(page, ['Allow', 'Continue', 'Continue as', 'Yes, continue']);
     
     // Ensure we end up on Threads home
@@ -279,25 +256,104 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
     }
 
     // Final verification
-    const ok = await page.evaluate(() => {
-      console.log('🔐 Final verification - checking for nav elements...');
-      const sel = ['[aria-label="Home"]','[aria-label="Search"]','[aria-label="Activity"]','[aria-label="Profile"]'];
-      let found = false;
-      for (const s of sel) {
-        if (document.querySelector(s)) {
-          console.log('🔐 Found nav element:', s);
-          found = true;
-          break;
+    const verificationResult = await page.evaluate(() => {
+      console.log('🔐 Final verification - checking login success...');
+
+      const isOnThreadsDomain = window.location.hostname.includes('threads.net');
+      const isNotOnLoginPage = !window.location.pathname.includes('/login');
+
+      console.log('🔐 On Threads domain:', isOnThreadsDomain, 'Not on login page:', isNotOnLoginPage);
+
+      // Check for navigation elements
+      const navSelectors = [
+        '[aria-label="Home"]',
+        '[aria-label="Search"]',
+        '[aria-label="Activity"]',
+        '[aria-label="Profile"]',
+        'a[href="/"]',
+        'a[href*="/search"]'
+      ];
+
+      let navElementsFound = 0;
+      for (const selector of navSelectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          console.log('🔐 Found nav element:', selector);
+          navElementsFound++;
         }
       }
-      console.log('🔐 Navigation elements found:', found);
-      return found;
+
+      // Check for error messages
+      const errorSelectors = [
+        '[role="alert"]',
+        '.error',
+        '.alert-danger',
+        'div[style*="red"]',
+        'span[style*="red"]',
+        'p[style*="red"]'
+      ];
+
+      let errorMessages = [];
+      for (const selector of errorSelectors) {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+          const text = element.textContent?.trim();
+          if (text && text.length > 0) {
+            errorMessages.push(text);
+          }
+        });
+      }
+
+      const loginFormPresent = !!document.querySelector('input[type="password"]');
+
+      console.log('🔐 Nav elements found:', navElementsFound);
+      console.log('🔐 Error messages found:', errorMessages.length);
+      console.log('🔐 Login form still present:', loginFormPresent);
+
+      return {
+        navElementsFound,
+        errorMessages,
+        loginFormPresent,
+        isOnThreadsDomain,
+        isNotOnLoginPage,
+        currentUrl: window.location.href
+      };
     });
-    
-    if (!ok) {
-      console.log('🔐 Login verification failed - nav elements not found');
-      throw new Error('Threads login failed - nav not visible.');
+
+    // Verification logic
+    const hasNavElements = verificationResult.navElementsFound > 0;
+    const noErrors = verificationResult.errorMessages.length === 0;
+    const noLoginForm = !verificationResult.loginFormPresent;
+    const isOnCorrectDomain = verificationResult.isOnThreadsDomain;
+    const notOnLoginPage = verificationResult.isNotOnLoginPage;
+
+    console.log('🔐 Verification results:');
+    console.log('🔐 - Has nav elements:', hasNavElements);
+    console.log('🔐 - No errors:', noErrors);
+    console.log('🔐 - No login form:', noLoginForm);
+    console.log('🔐 - On correct domain:', isOnCorrectDomain);
+    console.log('🔐 - Not on login page:', notOnLoginPage);
+
+    const loginSuccessful = (hasNavElements || (noLoginForm && isOnCorrectDomain && notOnLoginPage)) && noErrors;
+
+    if (!loginSuccessful) {
+      console.log('🔐 ❌ Login verification failed');
+      console.log('🔐 Error messages:', verificationResult.errorMessages);
+      console.log('🔐 Current URL:', verificationResult.currentUrl);
+
+      // Take a final screenshot for debugging
+      try {
+        await page.screenshot({ path: 'debug-login-verification-failed.png', fullPage: true });
+        console.log('🔐 📸 Screenshot taken: debug-login-verification-failed.png');
+      } catch (screenshotError) {
+        console.log('🔐 Screenshot failed:', screenshotError.message);
+      }
+
+      throw new Error(`Threads login verification failed. Nav elements: ${verificationResult.navElementsFound}, Errors: ${verificationResult.errorMessages.length}, Login form present: ${verificationResult.loginFormPresent}`);
     }
+
+    console.log('🔐 ✅ Login verification successful!');
+    console.log('🔐 Final URL:', verificationResult.currentUrl);
 
     console.log('✅ Threads login successful');
     return true;
@@ -306,7 +362,6 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
     throw new Error(`Threads login error: ${error.message}`);
   }
 }
-
 async function threadsLike(page, threadUrl) {
   console.log(`❤️ Attempting to like Threads post: ${threadUrl}`);
   await page.goto(threadUrl, { waitUntil: 'networkidle2' });

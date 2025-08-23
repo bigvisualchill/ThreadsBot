@@ -125,9 +125,9 @@ app.post('/run', async (req, res) => {
     progressSessionId, // New field for progress tracking
   } = req.body || {};
 
-  // Use environment variables if username/password not provided in request
-  const envUser = (platform === 'instagram' || platform === 'threads') ? process.env.INSTAGRAM_USERNAME : process.env.X_USERNAME;
-  const envPass = (platform === 'instagram' || platform === 'threads') ? process.env.INSTAGRAM_PASSWORD : process.env.X_PASSWORD;
+  // Use environment variables if username/password not provided in request (Threads only)
+  const envUser = process.env.THREADS_USERNAME || process.env.INSTAGRAM_USERNAME;
+  const envPass = process.env.THREADS_PASSWORD || process.env.INSTAGRAM_PASSWORD;
   const username = requestUsername || envUser;
   const password = requestPassword || envPass;
 

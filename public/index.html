@@ -943,10 +943,7 @@
           <label for="platform">Platform:</label>
           <select id="platform" name="platform" required>
             <option value="">Select Platform</option>
-            <option value="instagram">Instagram</option>
-            <option value="x">X (Twitter)</option>
             <option value="threads">Threads</option>
-            <option value="bluesky">Bluesky</option>
           </select>
         </div>
 
@@ -1436,24 +1433,10 @@
                 console.log('Could not get platform from session data, using default');
             }
             
-            // Update field visibility based on platform
-            if (platform === 'x') {
-                // X (Twitter) - show both fields as they work differently
-                if (hashtagField) hashtagField.style.display = 'block';
-                if (keywordsField) keywordsField.style.display = 'block';
-                if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
-            } else {
-                // Instagram, Threads, and Bluesky - only show hashtag field
-                if (hashtagField) hashtagField.style.display = 'block';
-                if (keywordsField) keywordsField.style.display = 'none';
-                if (platform === 'threads') {
-                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts containing this text';
-                } else if (platform === 'bluesky') {
-                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with hashtags or keywords';
-                } else {
-                    if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
-                }
-            }
+            // Update field visibility based on platform (Threads only)
+            if (hashtagField) hashtagField.style.display = 'block';
+            if (keywordsField) keywordsField.style.display = 'none';
+            if (hashtagHelp) hashtagHelp.textContent = 'Search for posts containing this text';
         }
 
         // Clear all localStorage session data
