@@ -212,6 +212,21 @@ The bot automatically captures screenshots at key points:
 - **Solution**: Removed Instagram dependency entirely
 - **Status**: ✅ Now uses direct username/password login only
 
+#### 5. "Assistant ID not available" (Fixed)
+- **Cause**: Assistant ID not being retrieved from session during auto-comment
+- **Solution**: Enhanced session data retrieval to include assistant ID
+- **Status**: ✅ Assistant ID now properly saved and retrieved
+
+#### 6. "Navigation timeout" (Fixed)
+- **Cause**: Inconsistent domain usage (threads.net vs threads.com)
+- **Solution**: Standardized all navigation to use threads.com domain
+- **Status**: ✅ All navigation now uses consistent domain
+
+#### 7. "Login verification mismatch" (Fixed)
+- **Cause**: Login verification logic too strict and not matching browser state
+- **Solution**: Simplified verification to check for main page without login form
+- **Status**: ✅ Login success now matches actual browser state
+
 ### Debug Logging
 Enable verbose logging by setting:
 ```bash
@@ -221,7 +236,14 @@ LOG_LEVEL=debug
 
 ## 🔧 Recent Fixes & Improvements
 
-### Critical Bug Fixes
+### Latest Critical Fixes (August 2024)
+- **✅ Assistant ID Retrieval**: Fixed assistant ID not being retrieved from session during auto-comment
+- **✅ Login Verification**: Improved login verification logic to match actual browser state
+- **✅ Logout Function**: Fixed logout to use Puppeteer methods instead of direct DOM access
+- **✅ Navigation Timeout**: Fixed navigation timeout by using correct threads.com domain
+- **✅ Session Management**: Enhanced session handling with better error recovery
+
+### Previous Critical Bug Fixes
 - **✅ Syntax Error Resolution**: Fixed try-catch block mismatches in `threads-functions.js`
 - **✅ Login Flow Overhaul**: Implemented direct navigation instead of broken button clicks
 - **✅ Instagram SSO Removal**: Eliminated Instagram dependency for reliable login
@@ -231,6 +253,15 @@ LOG_LEVEL=debug
 - **✅ Faster Startup**: Removed unnecessary dependencies and optimized loading
 - **✅ Better Memory Management**: Improved session handling and cleanup
 - **✅ Reduced Network Calls**: Optimized API interactions and caching
+- **✅ Reliable Navigation**: Fixed domain consistency issues for better performance
+
+### Current Status (August 2024)
+- **✅ Login System**: Fully functional with reliable verification
+- **✅ Session Management**: Robust session saving and loading
+- **✅ Assistant ID Integration**: Properly retrieves and uses OpenAI assistant ID
+- **✅ Auto-comment**: Working with AI-powered comment generation
+- **✅ Logout**: Clean logout with proper session cleanup
+- **✅ Error Handling**: Comprehensive error recovery and reporting
 
 ### Debugging Improvements
 - **✅ Visual Debugging**: Screenshots at every critical step
