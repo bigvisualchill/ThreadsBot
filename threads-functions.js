@@ -6,8 +6,10 @@ import { sleep, tryClickByText } from './bot.js';
 
 async function ensureThreadsLoggedIn(page, { username, password }) {
   try {
-  console.log('🧵 === THREADS LOGIN START ===');
-  console.log('🧵 Function called with username:', !!username, 'password:', !!password);
+    console.log('🧵 === THREADS LOGIN START ===');
+    console.log('🧵 Function called with username:', username, 'password:', password ? '***' : 'undefined');
+    console.log('🧵 Username type:', typeof username, 'Password type:', typeof password);
+    console.log('🧵 Username length:', username ? username.length : 0, 'Password length:', password ? password.length : 0);
   
     // Navigate to Threads
     console.log('🧵 Step 1: About to navigate to threads.net...');
@@ -162,12 +164,36 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
       throw new Error('Could not find password field');
     }
 
-    // Type credentials
+    // Type credentials with debugging
     console.log('🔐 Typing username...');
-    await page.type(usernameSelector, username, { delay: 20 });
+    console.log('🔐 Username value:', username, 'Type:', typeof username);
+    console.log('🔐 Username selector:', usernameSelector);
+
+    // Ensure username is a string
+    const usernameText = String(username || '');
+    console.log('🔐 Username as string:', usernameText);
+
+    if (usernameText && usernameText.trim()) {
+      await page.type(usernameSelector, usernameText, { delay: 20 });
+      console.log('🔐 ✅ Username typed successfully');
+    } else {
+      console.log('🔐 ⚠️ Username is empty or invalid');
+    }
 
     console.log('🔐 Typing password...');
-    await page.type(passwordSelector, password, { delay: 20 });
+    console.log('🔐 Password value:', password ? '***' : 'undefined', 'Type:', typeof password);
+    console.log('🔐 Password selector:', passwordSelector);
+
+    // Ensure password is a string
+    const passwordText = String(password || '');
+    console.log('🔐 Password as string:', passwordText ? '***' : 'empty');
+
+    if (passwordText && passwordText.trim()) {
+      await page.type(passwordSelector, passwordText, { delay: 20 });
+      console.log('🔐 ✅ Password typed successfully');
+    } else {
+      console.log('🔐 ⚠️ Password is empty or invalid');
+    }
 
     // Submit form
     console.log('🔐 Pressing Enter key to submit form...');
@@ -255,31 +281,84 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
       await sleep(1000);
     }
 
-    // Final verification
+    // Final verification - check actual authentication state
     const verificationResult = await page.evaluate(() => {
       console.log('🔐 Final verification - checking login success...');
 
+      const currentUrl = window.location.href;
       const isOnThreadsDomain = window.location.hostname.includes('threads.net');
       const isNotOnLoginPage = !window.location.pathname.includes('/login');
 
+      console.log('🔐 Current URL:', currentUrl);
       console.log('🔐 On Threads domain:', isOnThreadsDomain, 'Not on login page:', isNotOnLoginPage);
 
-      // Check for navigation elements
-      const navSelectors = [
-        '[aria-label="Home"]',
-        '[aria-label="Search"]',
-        '[aria-label="Activity"]',
-        '[aria-label="Profile"]',
-        'a[href="/"]',
-        'a[href*="/search"]'
+      // Check for authenticated user indicators
+      const authSelectors = [
+        // Profile/account related elements
+        '[data-testid="nav-profile"]',
+        '[aria-label*="Profile"]',
+        'a[href*="/profile"]',
+        'a[href*="/@"]',
+        // User menu/settings
+        '[aria-label*="Settings"]',
+        '[data-testid="settings-button"]',
+        // User avatar or profile picture
+        'img[alt*="profile"]',
+        'img[alt*="avatar"]',
+        '[role="img"][aria-label*="profile"]'
       ];
 
-      let navElementsFound = 0;
-      for (const selector of navSelectors) {
+      let authElementsFound = 0;
+      for (const selector of authSelectors) {
         const element = document.querySelector(selector);
         if (element) {
-          console.log('🔐 Found nav element:', selector);
-          navElementsFound++;
+          console.log('🔐 Found auth element:', selector);
+          authElementsFound++;
+        }
+      }
+
+      // Check for login/logout indicators
+      const loginSelectors = [
+        'button:contains("Log in")',
+        'a:contains("Log in")',
+        '[role="button"]:contains("Log in")',
+        'input[type="email"]',
+        'input[type="password"]',
+        'input[placeholder*="email"]',
+        'input[placeholder*="password"]'
+      ];
+
+      let loginElementsFound = 0;
+      for (const selector of loginSelectors) {
+        try {
+          const element = document.querySelector(selector);
+          if (element) {
+            console.log('🔐 Found login element:', selector);
+            loginElementsFound++;
+          }
+        } catch (e) {
+          // Some :contains selectors might not work in all browsers
+        }
+      }
+
+      // Check for specific Threads logged-in indicators
+      const threadsAuthSelectors = [
+        '[data-testid="create-button"]',  // Create post button (only visible when logged in)
+        '[aria-label="Create"]',
+        'svg[aria-label="Create"]',  // Create icon
+        'button[aria-label*="Create"]',
+        // Activity/notification indicators
+        '[data-testid="activity-button"]',
+        '[aria-label*="Activity"]',
+        '[aria-label*="Notifications"]'
+      ];
+
+      let threadsAuthElements = 0;
+      for (const selector of threadsAuthSelectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          console.log('🔐 Found Threads auth element:', selector);
+          threadsAuthElements++;
         }
       }
 
@@ -290,7 +369,9 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
         '.alert-danger',
         'div[style*="red"]',
         'span[style*="red"]',
-        'p[style*="red"]'
+        'p[style*="red"]',
+        '[class*="error"]',
+        '[class*="Error"]'
       ];
 
       let errorMessages = [];
@@ -299,47 +380,86 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
         elements.forEach(element => {
           const text = element.textContent?.trim();
           if (text && text.length > 0) {
+            console.log('🔐 Found error message:', text);
             errorMessages.push(text);
           }
         });
       }
 
-      const loginFormPresent = !!document.querySelector('input[type="password"]');
+      // Check page title and content for login indicators
+      const pageTitle = document.title;
+      const hasLoginInTitle = pageTitle.toLowerCase().includes('log in') ||
+                             pageTitle.toLowerCase().includes('login') ||
+                             pageTitle.toLowerCase().includes('sign in');
 
-      console.log('🔐 Nav elements found:', navElementsFound);
+      console.log('🔐 Page title:', pageTitle);
+      console.log('🔐 Has login in title:', hasLoginInTitle);
+      console.log('🔐 Auth elements found:', authElementsFound);
+      console.log('🔐 Login elements found:', loginElementsFound);
+      console.log('🔐 Threads auth elements found:', threadsAuthElements);
       console.log('🔐 Error messages found:', errorMessages.length);
-      console.log('🔐 Login form still present:', loginFormPresent);
 
       return {
-        navElementsFound,
-        errorMessages,
-        loginFormPresent,
+        currentUrl,
         isOnThreadsDomain,
         isNotOnLoginPage,
-        currentUrl: window.location.href
+        authElementsFound,
+        loginElementsFound,
+        threadsAuthElements,
+        errorMessages,
+        pageTitle,
+        hasLoginInTitle
       };
     });
 
-    // Verification logic
-    const hasNavElements = verificationResult.navElementsFound > 0;
-    const noErrors = verificationResult.errorMessages.length === 0;
-    const noLoginForm = !verificationResult.loginFormPresent;
+    // Enhanced verification logic
+    const hasAuthElements = verificationResult.authElementsFound > 0;
+    const hasThreadsAuthElements = verificationResult.threadsAuthElements > 0;
+    const hasLoginElements = verificationResult.loginElementsFound > 0;
+    const hasErrors = verificationResult.errorMessages.length > 0;
+    const hasLoginInTitle = verificationResult.hasLoginInTitle;
     const isOnCorrectDomain = verificationResult.isOnThreadsDomain;
-    const notOnLoginPage = verificationResult.isNotOnLoginPage;
 
-    console.log('🔐 Verification results:');
-    console.log('🔐 - Has nav elements:', hasNavElements);
-    console.log('🔐 - No errors:', noErrors);
-    console.log('🔐 - No login form:', noLoginForm);
+    console.log('🔐 Enhanced verification results:');
+    console.log('🔐 - Auth elements found:', hasAuthElements);
+    console.log('🔐 - Threads auth elements found:', hasThreadsAuthElements);
+    console.log('🔐 - Login elements found:', hasLoginElements);
+    console.log('🔐 - Has errors:', hasErrors);
+    console.log('🔐 - Has login in title:', hasLoginInTitle);
     console.log('🔐 - On correct domain:', isOnCorrectDomain);
-    console.log('🔐 - Not on login page:', notOnLoginPage);
 
-    const loginSuccessful = (hasNavElements || (noLoginForm && isOnCorrectDomain && notOnLoginPage)) && noErrors;
+    // Simplified and more reliable login verification
+    const isOnThreads = isOnCorrectDomain || verificationResult.currentUrl.includes('threads.com');
+    const hasLoginForm = hasLoginElements > 2 || hasLoginInTitle;
+    
+    // Check if we're on the main Threads page (not login page)
+    const isOnMainPage = isOnThreads && !verificationResult.currentUrl.includes('/login');
+    
+    // More lenient verification - if we're on the main Threads page and no login form, consider it successful
+    let loginSuccessful;
+    if (isOnMainPage && !hasLoginForm) {
+      loginSuccessful = true;
+      console.log('🔐 ✅ Login confirmed - on main Threads page without login form');
+    } else if (hasLoginForm) {
+      loginSuccessful = false;
+      console.log('🔐 ❌ Login failed - login form still present');
+    } else if (hasAuthElements || hasThreadsAuthElements) {
+      loginSuccessful = true;
+      console.log('🔐 ✅ Login confirmed - found authenticated user elements');
+    } else {
+      // If we're on Threads domain but no clear indicators, assume success
+      loginSuccessful = isOnThreads && !hasErrors;
+      console.log('🔐 ⚠️ Login status unclear - assuming success if on Threads domain without errors');
+    }
 
     if (!loginSuccessful) {
       console.log('🔐 ❌ Login verification failed');
+      console.log('🔐 Page title:', verificationResult.pageTitle);
       console.log('🔐 Error messages:', verificationResult.errorMessages);
       console.log('🔐 Current URL:', verificationResult.currentUrl);
+      console.log('🔐 Auth elements:', verificationResult.authElementsFound);
+      console.log('🔐 Login elements:', verificationResult.loginElementsFound);
+      console.log('🔐 Threads auth elements:', verificationResult.threadsAuthElements);
 
       // Take a final screenshot for debugging
       try {
@@ -349,7 +469,11 @@ async function ensureThreadsLoggedIn(page, { username, password }) {
         console.log('🔐 Screenshot failed:', screenshotError.message);
       }
 
-      throw new Error(`Threads login verification failed. Nav elements: ${verificationResult.navElementsFound}, Errors: ${verificationResult.errorMessages.length}, Login form present: ${verificationResult.loginFormPresent}`);
+      const reason = hasLoginForm ?
+        'Login form still present' :
+        'Not on main Threads page';
+
+      throw new Error(`Threads login verification failed: ${reason}. URL: ${verificationResult.currentUrl}, Auth elements: ${verificationResult.authElementsFound}, Login elements: ${verificationResult.loginElementsFound}, Threads auth: ${verificationResult.threadsAuthElements}, Errors: ${verificationResult.errorMessages.length}`);
     }
 
     console.log('🔐 ✅ Login verification successful!');

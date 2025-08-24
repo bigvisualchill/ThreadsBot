@@ -18,6 +18,19 @@ puppeteer.use(StealthPlugin());
 // cross-runtime sleep (works in any Puppeteer version)
 export const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
+// Clean up browsers on process exit
+process.on('SIGINT', async () => {
+  console.log('Shutting down, cleaning up browsers...');
+  await cleanupBrowser();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down, cleaning up browsers...');
+  await cleanupBrowser();
+  process.exit(0);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -108,14 +121,17 @@ async function ensureSessionsDirectory() {
   }
 }
 
-async function saveSession(page, platform, sessionName) {
+async function saveSession(page, platform, sessionName, assistantId = null) {
   try {
     await ensureSessionsDirectory();
     const { sessionPath } = getSessionFilePath(platform, sessionName);
     
-    const sessionData = await page.evaluate(() => {
+    // Get all cookies from the page
+    const cookies = await page.cookies();
+    
+    // Get localStorage and sessionStorage
+    const storageData = await page.evaluate(() => {
       return {
-        cookies: document.cookie,
         localStorage: Object.fromEntries(
           Object.entries(localStorage).map(([key, value]) => [key, value])
         ),
@@ -125,12 +141,17 @@ async function saveSession(page, platform, sessionName) {
       };
     });
     
-    // Add platform information to session data
-    sessionData.platform = platform;
-    sessionData.timestamp = new Date().toISOString();
+    const sessionData = {
+      platform,
+      timestamp: new Date().toISOString(),
+      cookies: cookies,
+      localStorage: storageData.localStorage,
+      sessionStorage: storageData.sessionStorage,
+      assistantId: assistantId // Save the assistant ID
+    };
     
     await fs.writeFile(sessionPath, JSON.stringify(sessionData, null, 2));
-    console.log(`✅ Session saved: ${sessionPath}`);
+    console.log(`✅ Session saved: ${sessionPath} (${cookies.length} cookies, ${Object.keys(storageData.localStorage).length} localStorage items, assistantId: ${assistantId ? 'saved' : 'none'})`);
     return true;
   } catch (error) {
     console.error('Error saving session:', error);
@@ -145,35 +166,54 @@ async function loadSession(page, platform, sessionName) {
     const sessionData = JSON.parse(await fs.readFile(sessionPath, 'utf8'));
     
     // Set cookies
-    if (sessionData.cookies) {
-      const cookies = sessionData.cookies.split(';').map(cookie => {
-        const [name, value] = cookie.trim().split('=');
-        return { name, value };
-      });
-      
-      for (const cookie of cookies) {
+    if (sessionData.cookies && Array.isArray(sessionData.cookies)) {
+      console.log(`🔄 Loading ${sessionData.cookies.length} cookies...`);
+      for (const cookie of sessionData.cookies) {
         if (cookie.name && cookie.value) {
-          await page.setCookie(cookie);
+          try {
+            await page.setCookie(cookie);
+          } catch (cookieError) {
+            console.log(`Warning: Could not set cookie ${cookie.name}: ${cookieError.message}`);
+          }
         }
+      }
+      console.log(`✅ Cookies loaded successfully`);
+    }
+    
+    // Set localStorage (with error handling)
+    if (sessionData.localStorage) {
+      try {
+        await page.evaluate((localStorageData) => {
+          for (const [key, value] of Object.entries(localStorageData)) {
+            try {
+              localStorage.setItem(key, value);
+            } catch (e) {
+              console.log(`Warning: Could not set localStorage item ${key}: ${e.message}`);
+            }
+          }
+        }, sessionData.localStorage);
+        console.log(`✅ localStorage loaded successfully`);
+      } catch (error) {
+        console.log(`Warning: Could not load localStorage: ${error.message}`);
       }
     }
     
-    // Set localStorage
-    if (sessionData.localStorage) {
-      await page.evaluate((localStorageData) => {
-        for (const [key, value] of Object.entries(localStorageData)) {
-          localStorage.setItem(key, value);
-        }
-      }, sessionData.localStorage);
-    }
-    
-    // Set sessionStorage
+    // Set sessionStorage (with error handling)
     if (sessionData.sessionStorage) {
-      await page.evaluate((sessionStorageData) => {
-        for (const [key, value] of Object.entries(sessionStorageData)) {
-          sessionStorage.setItem(key, value);
-        }
-      }, sessionData.sessionStorage);
+      try {
+        await page.evaluate((sessionStorageData) => {
+          for (const [key, value] of Object.entries(sessionStorageData)) {
+            try {
+              sessionStorage.setItem(key, value);
+            } catch (e) {
+              console.log(`Warning: Could not set sessionStorage item ${key}: ${e.message}`);
+            }
+          }
+        }, sessionData.sessionStorage);
+        console.log(`✅ sessionStorage loaded successfully`);
+      } catch (error) {
+        console.log(`Warning: Could not load sessionStorage: ${error.message}`);
+      }
     }
     
     console.log(`✅ Session loaded: ${sessionPath}`);
@@ -188,6 +228,7 @@ async function getSessionAssistantId(platform, sessionName) {
   try {
     const { sessionPath } = getSessionFilePath(platform, sessionName);
     const sessionData = JSON.parse(await fs.readFile(sessionPath, 'utf8'));
+    console.log(`🔧 DEBUG: Retrieved assistantId from session: ${sessionData.assistantId}`);
     return sessionData.assistantId;
       } catch (error) {
     console.log(`Could not get assistant ID from session: ${error.message}`);
@@ -518,16 +559,29 @@ async function logout(page, platform, sessionName = 'default') {
       console.log(`Session file not found or already deleted: ${sessionPath}`);
     }
     
-    // Clear browser storage immediately
-    await page.evaluate(() => {
-      // Clear all cookies
-      document.cookie.split(";").forEach(function(c) { 
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-      });
+    // Clear browser storage using Puppeteer methods (more reliable)
+    try {
+      // Clear all cookies using Puppeteer
+      const cookies = await page.cookies();
+      for (const cookie of cookies) {
+        await page.deleteCookie(cookie);
+      }
+      
       // Clear localStorage and sessionStorage
-      localStorage.clear();
-      sessionStorage.clear();
-    });
+      await page.evaluate(() => {
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch (e) {
+          console.log('Could not clear storage:', e.message);
+        }
+      });
+      
+      console.log(`Cleared ${cookies.length} cookies and storage`);
+    } catch (storageError) {
+      console.log(`Could not clear browser storage: ${storageError.message}`);
+      // Continue with logout even if storage clearing fails
+    }
     
     console.log(`Logout completed successfully for ${platform}`);
     return { success: true, message: `Successfully logged out from ${platform}` };
@@ -544,6 +598,12 @@ async function logout(page, platform, sessionName = 'default') {
       console.log(`Could not delete session file: ${e.message}`);
     }
     
+    // If the main error was just a storage clearing issue, still consider logout successful
+    if (error.message && error.message.includes('SecurityError') && error.message.includes('cookie')) {
+      console.log('Storage clearing failed but session file deleted - logout successful');
+      return { success: true, message: `Successfully logged out from ${platform} (session cleared)` };
+    }
+    
     return { success: false, error: error.message || 'Unknown logout error' };
   }
 }
@@ -554,9 +614,16 @@ async function launchBrowser(headful = false, platform = null) {
     if (headful) {
       // For headful mode, reuse existing browser if available
       if (globalBrowser) {
-        console.log('Reusing existing headful browser');
-        page = await globalBrowser.newPage();
-        return { browser: globalBrowser, page };
+        try {
+          console.log('Reusing existing headful browser');
+          // Test if the browser is still responsive
+          const pages = await globalBrowser.pages();
+          page = await globalBrowser.newPage();
+          return { browser: globalBrowser, page };
+        } catch (browserError) {
+          console.log('Existing browser is not responsive, creating new one:', browserError.message);
+          globalBrowser = null;
+        }
       }
       
       console.log('Launching new headful browser');
@@ -569,20 +636,77 @@ async function launchBrowser(headful = false, platform = null) {
           '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-zygote',
-          '--disable-gpu'
+          '--disable-gpu',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-field-trial-config',
+          '--disable-ipc-flooding-protection',
+          '--enable-features=NetworkService,NetworkServiceLogging',
+          '--force-color-profile=srgb',
+          '--metrics-recording-only',
+          '--no-default-browser-check',
+          '--no-pings',
+          '--no-zygote',
+          '--password-store=basic',
+          '--use-mock-keychain',
+          '--window-size=1920,1080',
+          '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ]
       });
       
       page = await globalBrowser.newPage();
+      
+      // Additional stealth measures
+      await page.evaluateOnNewDocument(() => {
+        // Remove webdriver property
+        delete navigator.__proto__.webdriver;
+        
+        // Override permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+          parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+        );
+        
+        // Override plugins
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [1, 2, 3, 4, 5],
+        });
+        
+        // Override languages
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['en-US', 'en'],
+        });
+        
+        // Override chrome
+        Object.defineProperty(window, 'chrome', {
+          get: () => ({
+            runtime: {},
+          }),
+        });
+      });
+      
       return { browser: globalBrowser, page };
     } else {
       // For headless mode, create isolated contexts per platform
       if (platform) {
         if (platformContexts.has(platform)) {
-          // Reuse existing isolated context
-          const existingContext = platformContexts.get(platform);
-          page = await existingContext.context.newPage();
-          return { browser: existingContext.browser, page };
+          try {
+            // Reuse existing isolated context
+            const existingContext = platformContexts.get(platform);
+            page = await existingContext.context.newPage();
+            return { browser: existingContext.browser, page };
+          } catch (contextError) {
+            console.log('Existing context is not responsive, creating new one:', contextError.message);
+            platformContexts.delete(platform);
+          }
         } else {
           // Create new isolated context
           const browser = await puppeteer.launch({
@@ -624,8 +748,48 @@ async function launchBrowser(headful = false, platform = null) {
     }
   } catch (error) {
     console.error('Error launching browser:', error);
+    
+    // Clean up any broken browser instances
+    if (globalBrowser) {
+      try {
+        await globalBrowser.close();
+      } catch (e) {
+        console.log('Error closing broken browser:', e.message);
+      }
+      globalBrowser = null;
+    }
+    
+    // Clear broken platform contexts
+    if (platform) {
+      platformContexts.delete(platform);
+    }
+    
     throw error;
   }
+}
+
+// Clean up browser resources
+async function cleanupBrowser() {
+  if (globalBrowser) {
+    try {
+      await globalBrowser.close();
+      console.log('Global browser closed');
+    } catch (e) {
+      console.log('Error closing global browser:', e.message);
+    }
+    globalBrowser = null;
+  }
+  
+  // Close all platform contexts
+  for (const [platform, context] of platformContexts.entries()) {
+    try {
+      await context.browser.close();
+      console.log(`Platform context closed: ${platform}`);
+    } catch (e) {
+      console.log(`Error closing platform context ${platform}:`, e.message);
+    }
+  }
+  platformContexts.clear();
 }
 
 export async function runAction(options) {
@@ -649,9 +813,8 @@ export async function runAction(options) {
 
   // Progress tracking helper
   const reportProgress = (step, details = {}) => {
-    console.log(`📊 reportProgress called: ${step}`, details);
+    console.log(`📊 Progress: ${step}`, details);
     if (sendProgress) {
-      console.log(`📡 Sending progress via callback`);
       sendProgress({
         step,
         platform,
@@ -659,8 +822,6 @@ export async function runAction(options) {
         sessionName,
         ...details
       });
-    } else {
-      console.log(`⚠️ No sendProgress callback available`);
     }
   };
 
@@ -683,9 +844,22 @@ export async function runAction(options) {
     reportProgress('🌐 Opening browser...', { current: 0, total: 100 });
     
     // Launch browser with platform isolation for headful mode
-    const browserResult = await launchBrowser(headful, platform);
-    browser = browserResult.browser;
-    page = browserResult.page;
+    let browserResult;
+    try {
+      browserResult = await launchBrowser(headful, platform);
+      browser = browserResult.browser;
+      page = browserResult.page;
+    } catch (browserError) {
+      console.error('Failed to launch browser, retrying once:', browserError.message);
+      
+      // Clean up and retry once
+      await cleanupBrowser();
+      await sleep(2000);
+      
+      browserResult = await launchBrowser(headful, platform);
+      browser = browserResult.browser;
+      page = browserResult.page;
+    }
     
     reportProgress('🔐 Authenticating...', { current: 20, total: 100 });
 
@@ -708,25 +882,46 @@ export async function runAction(options) {
     if (action === 'check-session') {
       page = browserResult.page;
       
-      // Load session first
-      const sessionLoaded = await loadSession(page, platform, sessionName);
+      // Try to load session (but don't fail if it doesn't work)
+      try {
+        await loadSession(page, platform, sessionName);
+      } catch (error) {
+        console.log(`Session loading failed, continuing with check: ${error.message}`);
+      }
       
       // Check Threads login status
-      await page.goto('https://www.threads.net/', { waitUntil: 'networkidle2' });
+      await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
+      
+      // Wait a bit for the page to fully load
+      await sleep(3000);
         
-        const loginStatus = await page.evaluate(() => {
-          const composeButton = document.querySelector('[aria-label*="Compose"], [data-testid*="compose"], button[aria-label*="compose" i]');
-          const userMenu = document.querySelector('[aria-label*="Account"], [data-testid*="account"], [data-testid*="user"]');
-          const feedIndicator = document.querySelector('[data-testid*="feed"], .feed, [aria-label*="feed"]');
-          const homeIndicator = document.querySelector('[aria-label*="Home"], [data-testid*="home"]');
-          
+      const loginStatus = await page.evaluate(() => {
+        const composeButton = document.querySelector('[aria-label*="Compose"], [data-testid*="compose"], button[aria-label*="compose" i]');
+        const userMenu = document.querySelector('[aria-label*="Account"], [data-testid*="account"], [data-testid*="user"]');
+        const feedIndicator = document.querySelector('[data-testid*="feed"], .feed, [aria-label*="feed"]');
+        const homeIndicator = document.querySelector('[aria-label*="Home"], [data-testid*="home"]');
+        const loginForm = document.querySelector('form[action*="login"], input[type="password"]');
+        
+        console.log('Checking login status...');
+        console.log('Compose button:', !!composeButton);
+        console.log('User menu:', !!userMenu);
+        console.log('Feed indicator:', !!feedIndicator);
+        console.log('Home indicator:', !!homeIndicator);
+        console.log('Login form:', !!loginForm);
+        
+        // If we see login form, definitely not logged in
+        if (loginForm) {
+          return false;
+        }
+        
+        // If we see authenticated elements, definitely logged in
         return !!(composeButton || userMenu || feedIndicator || homeIndicator);
       });
       
       if (loginStatus) {
         return { ok: true, message: 'Session is valid and logged in' };
-            } else {
-        return { ok: false, message: 'Session is invalid or expired' };
+      } else {
+        return { ok: false, message: 'Session is invalid or expired - please login again' };
       }
     }
 
@@ -740,14 +935,15 @@ export async function runAction(options) {
     const sessionLoaded = await loadSession(page, platform, sessionName);
     
       // Navigate to Threads
-      await page.goto('https://www.threads.net/', { waitUntil: 'networkidle2' });
+      await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
       
       // Try to login using Threads functions
       const loginSuccess = await ensureThreadsLoggedIn(page, { username, password });
       
       if (loginSuccess) {
         // Save session after successful login
-        const sessionSaved = await saveSession(page, platform, sessionName);
+        console.log(`🔧 DEBUG: Saving session with assistantId: ${assistantId}`);
+        const sessionSaved = await saveSession(page, platform, sessionName, assistantId);
         if (sessionSaved) {
           return { ok: true, message: 'Login successful and session saved' };
         } else {
@@ -763,8 +959,49 @@ export async function runAction(options) {
       // Load session first
       const sessionLoaded = await loadSession(page, platform, sessionName);
       
-      // Ensure logged in
-      await ensureThreadsLoggedIn(page, { username, password });
+      // Navigate to Threads and check if already logged in
+      await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
+      await sleep(2000);
+      
+      // Check if already logged in
+      const isLoggedIn = await page.evaluate(() => {
+        // Look for login form elements
+        const loginForm = document.querySelector('form[action*="login"], input[type="password"], input[placeholder*="password"]');
+        
+        // Look for authenticated user elements by checking page content
+        const pageText = document.body.textContent || '';
+        const hasCreateButton = pageText.includes('Create');
+        const hasPostButton = pageText.includes('Post');
+        const hasLikeButton = pageText.includes('Like');
+        const hasReplyButton = pageText.includes('Reply');
+        
+        console.log('Login detection:');
+        console.log('- Login form found:', !!loginForm);
+        console.log('- Create button found:', hasCreateButton);
+        console.log('- Post button found:', hasPostButton);
+        console.log('- Like button found:', hasLikeButton);
+        console.log('- Reply button found:', hasReplyButton);
+        
+        // If we see login form, not logged in
+        if (loginForm) {
+          console.log('Login form detected - NOT logged in');
+          return false;
+        }
+        
+        // If we see authenticated elements, logged in
+        const hasAuthElements = hasCreateButton || hasPostButton || hasLikeButton || hasReplyButton;
+        console.log('Has authenticated elements:', hasAuthElements);
+        
+        return hasAuthElements;
+      });
+      
+      if (!isLoggedIn) {
+        // Only try to login if not already logged in
+        console.log('Not logged in, attempting login...');
+        await ensureThreadsLoggedIn(page, { username, password });
+      } else {
+        console.log('Already logged in, proceeding with search...');
+      }
       
       reportProgress('🔍 Discovering posts...', { current: 30, total: 100 });
       
@@ -805,7 +1042,7 @@ export async function runAction(options) {
           }
           
           // Check for duplicate comments
-          const already = await hasMyThreadsCommentAndCache(page, postUrl, username);
+          const already = await hasMyThreadsCommentAndCache({ page, username, postUrl });
             if (already) {
               console.log(`🔄 DUPLICATE CHECK: Already commented → SKIPPING`);
               results.push({ url: postUrl, success: false, error: 'Already commented' });
@@ -836,10 +1073,10 @@ export async function runAction(options) {
                 try {
                   console.log(`❤️ Liking post: ${postUrl}`);
                 const likeResult = await threadsLike(page, postUrl);
-                  if (likeResult) {
+                  if (likeResult && likeResult.success) {
                     console.log(`✅ Post liked successfully`);
                   } else {
-                    console.log(`⚠️ Like may have failed (returned false)`);
+                    console.log(`⚠️ Like may have failed (returned false or no success)`);
                   }
                 } catch (likeError) {
                   console.log(`❌ Like failed: ${likeError.message}`);

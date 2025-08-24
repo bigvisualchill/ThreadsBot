@@ -454,6 +454,58 @@
             border: 1px solid #d6d8db;
         }
 
+        /* Session Status Indicators */
+        .session-status-indicators {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: white;
+            border: 1px solid #dee2e6;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #6c757d;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.online {
+            background: #28a745;
+        }
+
+        .status-dot.offline {
+            background: #dc3545;
+        }
+
+        .status-dot.checking {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        .status-text {
+            font-size: 14px;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
         /* Queue Styles */
         .queue-header {
             margin-bottom: 20px;
@@ -987,12 +1039,19 @@
           </div>
           
           <div class="session-actions">
-            <button type="button" id="checkSessionBtn" class="btn btn-secondary">Check Status</button>
             <button type="button" id="logoutBtn" class="btn btn-danger">Logout Selected</button>
             <button type="button" id="clearAllBtn" class="btn btn-danger" style="background: linear-gradient(135deg, #dc3545, #c82333); margin-left: 10px;">Clear All Accounts</button>
           </div>
           
           <div id="sessionStatus" class="status-message"></div>
+          
+          <!-- Automatic Status Indicators -->
+          <div class="session-status-indicators">
+            <div class="status-indicator" id="statusIndicator">
+              <div class="status-dot"></div>
+              <span class="status-text">No accounts available</span>
+            </div>
+          </div>
         </div>
             </div>
 
@@ -1488,11 +1547,20 @@
 
         // Event listeners
         document.getElementById('useAI').addEventListener('change', updateUI);
-        document.getElementById('checkSessionBtn').addEventListener('click', checkSession);
         document.getElementById('loginBtn').addEventListener('click', login);
         document.getElementById('logoutBtn').addEventListener('click', logout);
         document.getElementById('clearAllBtn').addEventListener('click', clearAllSessions);
         document.getElementById('autoActiveSession').addEventListener('change', updateSearchFields);
+        
+        // Auto-check status when session dropdown changes
+        document.getElementById('activeSession').addEventListener('change', function() {
+            const selectedSession = this.value;
+            if (selectedSession) {
+                checkSession(selectedSession);
+            } else {
+                checkAllSessions();
+            }
+        });
         
         // Add debugging to run button
         const runBtn = document.getElementById('runBtn');
@@ -1998,13 +2066,19 @@
         console.log('🎯 WEB UI: Page loaded, initializing UI...');
         updateUI();
         updateQueueDisplay();
+        
+        // Auto-check session status on page load
+        setTimeout(() => {
+            checkAllSessions();
+        }, 1000);
+        
         console.log('🎯 WEB UI: UI initialized');
 
         // Session management functions
-        async function checkSession() {
-            const activeSession = document.getElementById('activeSession').value;
+        async function checkSession(sessionKey = null) {
+            const activeSession = sessionKey || document.getElementById('activeSession').value;
             if (!activeSession) {
-                updateSessionStatus('Please select an account first', 'error');
+                updateSessionStatusIndicator('No accounts available', 'offline');
                 return;
             }
 
@@ -2020,7 +2094,7 @@
                 console.log('Could not get platform from session data, using default');
             }
 
-            updateSessionStatus('Checking session status...', 'loading');
+            updateSessionStatusIndicator('Checking status...', 'checking');
             
             try {
                 const response = await fetch('/run', {
@@ -2034,14 +2108,58 @@
                 });
                 
                 const result = await response.json();
-                if (result.ok && result.loggedIn) {
+                console.log('🎯 WEB UI: Check session result:', result);
+                console.log('🎯 WEB UI: result.ok =', result.ok);
+                console.log('🎯 WEB UI: result.message =', result.message);
+                console.log('🎯 WEB UI: result.result =', result.result);
+                
+                // Check if the actual result is in result.result
+                const actualResult = result.result || result;
+                console.log('🎯 WEB UI: actualResult =', actualResult);
+                console.log('🎯 WEB UI: actualResult.message =', actualResult.message);
+                console.log('🎯 WEB UI: actualResult.message.includes("logged in") =', actualResult.message.includes('logged in'));
+                
+                if (result.ok && (result.message.includes('logged in') || (actualResult.message && actualResult.message.includes('logged in')))) {
+                    console.log('🎯 WEB UI: Setting status to ONLINE');
+                    updateSessionStatusIndicator(`${activeSession} - Online`, 'online');
                     updateSessionStatus(`✅ ${activeSession} (${platform}) is logged in`, 'success');
                 } else {
+                    console.log('🎯 WEB UI: Setting status to OFFLINE');
+                    updateSessionStatusIndicator(`${activeSession} - Offline`, 'offline');
                     updateSessionStatus(`❌ ${activeSession} (${platform}) is not logged in`, 'error');
                 }
             } catch (error) {
+                updateSessionStatusIndicator(`${activeSession} - Error`, 'offline');
                 updateSessionStatus('Error checking session: ' + error.message, 'error');
             }
+        }
+
+        // Update session status indicator
+        function updateSessionStatusIndicator(text, status) {
+            const indicator = document.getElementById('statusIndicator');
+            const dot = indicator.querySelector('.status-dot');
+            const textElement = indicator.querySelector('.status-text');
+            
+            // Remove all status classes
+            dot.classList.remove('online', 'offline', 'checking');
+            
+            // Add new status class
+            dot.classList.add(status);
+            
+            // Update text
+            textElement.textContent = text;
+        }
+
+        // Auto-check all sessions
+        async function checkAllSessions() {
+            const sessions = getAvailableSessions();
+            if (sessions.length === 0) {
+                updateSessionStatusIndicator('No accounts available', 'offline');
+                return;
+            }
+            
+            // Check the first session as the main indicator
+            await checkSession(sessions[0]);
         }
 
         async function login() {
@@ -2080,10 +2198,12 @@
                 });
                 
                 const result = await response.json();
-                if (result.ok) {
+                console.log('🎯 WEB UI: Login result:', result);
+                
+                if (result.ok && !result.message.includes('failed')) {
                     updateSessionStatus(`✅ Successfully logged in as ${sessionName}`, 'success');
-                    // Save session to localStorage for dropdown (include assistantId)
-                    localStorage.setItem(`session_${platform}_${sessionName}`, JSON.stringify({ platform, username, assistantId }));
+                    // Save session to localStorage for dropdown (include assistantId and password)
+                    localStorage.setItem(`session_${platform}_${sessionName}`, JSON.stringify({ platform, username, password, assistantId }));
                     updateSessionDropdown();
                     updateSearchFields();
                     
@@ -2093,6 +2213,11 @@
                         autoDropdown.value = `${platform}_${sessionName}`;
                         updateSearchFields(); // Update fields for the newly selected account
                     }
+                    
+                    // Auto-check status after successful login
+                    setTimeout(() => {
+                        checkSession(`${platform}_${sessionName}`);
+                    }, 2000);
                 } else {
                     updateSessionStatus('Login failed: ' + result.message, 'error');
                 }
@@ -2203,21 +2328,27 @@
             updateStatus('Running action...', 'loading');
 
             try {
-                // Get username from the selected session
+                // Get username, password, and assistantId from the selected session
                 let username = null;
+                let password = null;
+                let assistantId = null;
                 try {
                     const sessionData = localStorage.getItem(`session_${activeSession}`);
                     if (sessionData) {
                         const parsed = JSON.parse(sessionData);
                         username = parsed.username;
+                        password = parsed.password; // Get password from session
+                        assistantId = parsed.assistantId; // Get assistantId from session
                         console.log('🎯 WEB UI: Retrieved username from session:', username);
+                        console.log('🎯 WEB UI: Retrieved password from session:', password ? '***' : 'not found');
+                        console.log('🎯 WEB UI: Retrieved assistantId from session:', assistantId ? '***' : 'not found');
                     } else {
                         // Fallback: use session name as username for existing sessions
                         username = activeSession;
                         console.log('🎯 WEB UI: Using session name as username fallback:', username);
                     }
                 } catch (error) {
-                    console.log('🎯 WEB UI: Could not retrieve username from session, using session name:', error);
+                    console.log('🎯 WEB UI: Could not retrieve session data, using session name:', error);
                     username = activeSession;
                 }
 
@@ -2231,6 +2362,8 @@
                     platform,
                     sessionName: activeSession.split('_').slice(1).join('_'), // Extract username from platform_username
                     username: username, // Add username from session
+                    password: password, // Add password from session
+                    assistantId: assistantId, // Add assistantId from session
                     searchCriteria,
                     maxPosts,
                     useAI,
