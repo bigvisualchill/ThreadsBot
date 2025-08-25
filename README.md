@@ -31,6 +31,9 @@ A sophisticated automation tool for Threads (Meta's text-based social platform) 
 - **📈 Analytics & Reporting** - Performance metrics and success tracking
 - **🔧 Flexible Configuration** - Easy setup and customization
 - **🚨 Error Handling** - Robust error recovery and reporting
+- **🔄 Enhanced Sequencer** - Loop functionality and content source selection
+- **🎯 Smart Content Filtering** - Automatic filtering of low-quality posts
+- **🤖 AI Text Processing** - Automatic formatting of AI-generated content
 
 ## 🏗️ Architecture
 
@@ -143,6 +146,13 @@ Configure automation parameters in the web interface:
 - **Interaction Limits**: Set maximum likes/comments per session
 - **Timing**: Configure delays between actions
 - **AI Prompts**: Customize comment generation prompts
+
+### Enhanced Sequencer Features
+- **Loop Functionality**: Repeat entire sequences with configurable loop count
+- **Content Source Selection**: Choose between Search Posts or For You Feed
+- **Smart Content Filtering**: Automatically skip posts with <5 words or video content
+- **AI Text Processing**: Automatic formatting of em/en dashes in AI comments
+- **Real-time Status Tracking**: Live updates with loop progress indicators
 
 ## 📡 API Endpoints
 
@@ -367,7 +377,17 @@ When reporting bugs, please include:
 
 ## 📈 Version History
 
-### v2.1.0 - Duplicate Comments & Sequencer Fixes (Latest)
+### v2.2.0 - Enhanced Sequencer & Content Filtering (Latest)
+- ✅ **Loop Functionality**: Replaced Loop action with Loop settings (checkbox + count field)
+- ✅ **Content Source Selection**: Added dropdown for Search Posts vs For You Feed
+- ✅ **For You Feed Discovery**: Implemented post discovery from Threads For You feed
+- ✅ **Content Filtering**: Skips posts with <5 words OR video content
+- ✅ **Text Processing**: AI comments automatically replace em/en dashes with commas
+- ✅ **Modal UI Improvements**: Comment settings now show by default
+- ✅ **Simplified Comments Tab**: Removed hashtag field, simplified to keywords only
+- ✅ **Enhanced Sequencer**: Improved loop functionality and status tracking
+
+### v2.1.0 - Duplicate Comments & Sequencer Fixes
 - ✅ **Duplicate Comments Fixed**: Resolved issue where bot posted two comments per post
 - ✅ **Sequencer Duplicate Execution**: Fixed duplicate event handlers causing double API calls
 - ✅ **Sequence Completion Logic**: Added proper completion handling with browser notifications
@@ -412,4 +432,4 @@ This project is private and proprietary. All rights reserved.
 
 *Last updated: January 2025*
 *Repository: https://github.com/bigvisualchill/ThreadsBot.git*
-*Latest Version: v2.1.0 - Duplicate Comments & Sequencer Fixes*
+*Latest Version: v2.2.0 - Enhanced Sequencer & Content Filtering*
