@@ -86,15 +86,15 @@
         }
 
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 25px;
         }
 
         .form-group label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-weight: 600;
             color: #374151;
-            font-size: 0.95rem;
+            font-size: 1rem;
         }
 
         .form-group input[type="text"],
@@ -103,13 +103,14 @@
         .form-group select,
         .form-group textarea {
             width: 100%;
-            padding: 12px 16px;
+            padding: 14px 18px;
             border: 2px solid #e5e7eb;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 1rem;
             transition: all 0.3s ease;
             background: #ffffff;
             box-sizing: border-box;
+            line-height: 1.5;
         }
 
         .form-group input[type="text"]:focus,
@@ -140,29 +141,30 @@
 
         .form-group small {
             display: block;
-            margin-top: 6px;
+            margin-top: 8px;
             color: #6b7280;
-            font-size: 0.85rem;
-            line-height: 1.4;
+            font-size: 0.9rem;
+            line-height: 1.5;
         }
 
         .checkbox-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
 
         .checkbox-group label {
             display: flex;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 15px;
             cursor: pointer;
             font-weight: 500;
             color: #374151;
+            font-size: 0.95rem;
         }
 
         .checkbox-group input[type="checkbox"] {
-            margin-right: 10px;
-            width: 18px;
-            height: 18px;
+            margin-right: 12px;
+            width: 20px;
+            height: 20px;
             accent-color: #667eea;
             cursor: pointer;
         }
@@ -373,12 +375,12 @@
 
         .section h3 {
             margin-top: 0;
-            margin-bottom: 15px;
+            margin-bottom: 25px;
             color: #1f2937;
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 700;
-            border-bottom: 2px solid #f3f4f6;
-            padding-bottom: 8px;
+            border-bottom: 3px solid #f3f4f6;
+            padding-bottom: 12px;
         }
 
         .section:last-child {
@@ -872,6 +874,118 @@
                 font-size: 12px;
             }
         }
+
+        /* Sequencer Styles */
+        .sequence-list {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 200px;
+        }
+
+        .sequence-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .sequence-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-color: #8e44ad;
+        }
+
+        .sequence-item-info {
+            flex: 1;
+        }
+
+        .sequence-item-title {
+            font-weight: 600;
+            color: #374151;
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+
+        .sequence-item-details {
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        .sequence-item-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .sequence-item-number {
+            background: #8e44ad;
+            color: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .remove-action-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .remove-action-btn:hover {
+            background: #c82333;
+        }
+
+        .empty-message {
+            text-align: center;
+            color: #6b7280;
+            font-style: italic;
+            margin: 40px 0;
+        }
+
+        .action-type-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-right: 10px;
+        }
+
+        .action-type-comment {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .action-type-post {
+            background: #e8f5e8;
+            color: #388e3c;
+        }
+
+        .action-type-pause {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .action-type-loop {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
     </style>
 </head>
 <body>
@@ -885,7 +999,9 @@
             <!-- Tab Navigation -->
             <div class="tabs">
                 <button class="tab active" data-tab="login">Login & Setup</button>
-                <button class="tab" data-tab="auto-comment">Auto Comment</button>
+                <button class="tab" data-tab="auto-comment">Comments</button>
+                <button class="tab" data-tab="auto-post">Posts</button>
+                <button class="tab" data-tab="sequencer">Sequencer</button>
             </div>
 
             <!-- Login Tab -->
@@ -922,7 +1038,8 @@
         </div>
 
         <div class="form-group">
-          <button type="button" id="loginBtn" class="btn btn-primary">Login & Save Session</button>
+          <button type="button" id="loginBtn" class="btn btn-primary" style="pointer-events: auto; cursor: pointer;" onclick="console.log('LOGIN BUTTON CLICKED!'); alert('LOGIN CLICKED!'); try { login(); } catch(e) { alert('ERROR: ' + e.message); }">Login & Save Session</button>
+          <button type="button" onclick="alert('TEST BUTTON WORKS!')" style="background: red; color: white; margin-left: 10px; pointer-events: auto; cursor: pointer;">TEST BUTTON</button>
           <input type="checkbox" id="headful" name="headful">
           <label for="headful">Headful Mode (Run in browser)</label>
         </div>
@@ -939,8 +1056,8 @@
           </div>
           
           <div class="session-actions">
-            <button type="button" id="logoutBtn" class="btn btn-danger">Logout Selected</button>
-            <button type="button" id="clearAllBtn" class="btn btn-danger" style="background: linear-gradient(135deg, #dc3545, #c82333); margin-left: 10px;">Clear All Accounts</button>
+            <button type="button" id="logoutBtn" class="btn btn-danger" onclick="logout()">Logout Selected</button>
+            <button type="button" id="clearAllBtn" class="btn btn-danger" onclick="clearAllSessions()" style="background: linear-gradient(135deg, #dc3545, #c82333); margin-left: 10px;">Clear All Accounts</button>
           </div>
           
           <div id="sessionStatus" class="status-message"></div>
@@ -955,28 +1072,11 @@
         </div>
             </div>
 
-            <!-- Auto Comment Tab -->
+            <!-- Comments Tab -->
             <div id="auto-comment" class="tab-content">
                 
-                <div class="form-group">
-                    <label for="autoActiveSession">Account:</label>
-                    <select id="autoActiveSession">
-                        <option value="">Select an account</option>
-                    </select>
-                    <small>Choose which logged-in account to use</small>
-                </div>
-
                 <div class="section" id="searchSection">
                     <h3>Target Selection</h3>
-                    
-                    <div class="row">
-                        <div class="form-group">
-                            <label for="maxPosts">Max Posts</label>
-                            <input type="number" id="maxPosts" value="5" min="1" max="50">
-                            <small>Number of posts to interact with</small>
-                        </div>
-
-                    </div>
                     
                     <div class="row">
                         <div class="form-group" id="hashtagField">
@@ -1011,26 +1111,129 @@
                     </div>
                 </div>
 
-                <div class="run-section">
-                    <div class="button-group">
-                        <button id="runBtn" class="btn btn-primary">Run Now</button>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="autoHeadful">
-                        <label for="autoHeadful">Headful Mode (Run in browser)</label>
-                    </div>
+                <div class="section">
+                    <h3>Settings Saved</h3>
+                    <p>Your comment settings are saved and ready to use in the Sequencer tab.</p>
                 </div>
             </div>
 
+            <!-- Posts Tab -->
+            <div id="auto-post" class="tab-content">
+                <div class="section">
+                    <h3>📝 Posts</h3>
+                    <p>Configure posting settings for automated content creation</p>
+                </div>
 
+                <div class="section" id="postingSection">
+                    <h3>Media Settings</h3>
+                    
+                    <div class="form-group">
+                        <label for="mediaFolder">Media Folder:</label>
+                        <input type="text" id="mediaFolder" placeholder="/path/to/media/folder">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="useMedia">
+                            <label for="useMedia">Use media from folder for posts</label>
+                        </div>
+                        <small>When enabled, AI will analyze media and create captions based on the content</small>
+                    </div>
+                </div>
 
+                <div class="section">
+                    <h3>Settings Saved</h3>
+                    <p>Your posting settings are saved and ready to use in the Sequencer tab.</p>
+                </div>
 
+                <div id="postingStatus" class="status"></div>
+            </div>
+
+            <!-- Sequencer Tab -->
+            <div id="sequencer" class="tab-content">
+                <div class="section">
+                    <h3>Action Sequencer</h3>
+                    <p>Create automation sequences by adding actions, setting execution counts, and delays.</p>
+                </div>
+
+                <div class="section">
+                    <h3>Build Your Sequence</h3>
+                    <div class="form-group">
+                        <button type="button" id="addActionBtn" class="btn btn-primary">➕ Add Action</button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Sequence Actions</h3>
+                    <div id="sequenceList" class="sequence-list">
+                        <p class="empty-message">No actions added yet. Add actions above to build your sequence.</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Sequence Controls</h3>
+                    <div class="button-group">
+                        <button id="startSequenceBtn" class="btn btn-primary">🚀 Start Sequence</button>
+                        <button id="stopSequenceBtn" class="btn btn-danger" style="display: none;">⏹️ Stop Sequence</button>
+                        <button id="clearSequenceBtn" class="btn btn-secondary">🗑️ Clear Sequence</button>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="sequencerHeadful">
+                        <label for="sequencerHeadful">Headful Mode (Run in browser)</label>
+                    </div>
+                </div>
+
+                <div id="sequencerStatus" class="status"></div>
+            </div>
+
+            <!-- Add Action Modal -->
+            <div id="addActionModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Add Action to Sequence</h3>
+                        <span class="close" id="closeActionModal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="modalActionType">Action Type:</label>
+                            <select id="modalActionType">
+                                <option value="comment">Comments</option>
+                                <option value="post">Posts</option>
+                                <option value="pause">Time Pause</option>
+                                <option value="loop">Loop</option>
+                            </select>
+                        </div>
+
+                        <div class="row">
+                            <div class="form-group">
+                                <label for="modalActionCount">Execution Count:</label>
+                                <input type="number" id="modalActionCount" value="1" min="1" max="100">
+                                <small>How many times to execute this action</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="modalActionDelay">Delay (minutes):</label>
+                                <input type="number" id="modalActionDelay" value="5" min="1" max="1440">
+                                <small>Delay between executions</small>
+                            </div>
+                        </div>
+
+                        <div class="button-group">
+                            <button type="button" id="modalAddActionBtn" class="btn btn-primary">Add Action</button>
+                            <button type="button" id="modalCancelBtn" class="btn btn-secondary" onclick="hideAddActionModal()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div id="status" class="status"></div>
         </div>
     </div>
 
     <script>
+        // Global error handler
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('JavaScript Error:', msg, 'at', url, 'line', lineNo);
+            alert('JavaScript Error: ' + msg);
+            return false;
+        };
+
         const el = id => document.getElementById(id);
         const status = el('status');
         const btn = el('runBtn');
@@ -1100,7 +1303,20 @@
                 if (commentSection) {
                     commentSection.style.display = 'block';
                 }
-
+            } else if (activeTab === 'auto-post') {
+                // Show auto-post sections when on auto-post tab
+                const postingSection = document.getElementById('postingSection');
+                if (postingSection) postingSection.style.display = 'block';
+                
+                // Update posting UI
+                updatePostingUI();
+            } else if (activeTab === 'sequencer') {
+                // Update sequencer when switching to sequencer tab
+                updateSequencerSessionDropdown();
+                // Re-setup listeners when switching to sequencer tab
+                setTimeout(() => {
+                    setupSequencerListeners();
+                }, 100);
             }
             
             // Update session dropdown
@@ -1245,32 +1461,12 @@
 
         // Update search fields based on selected account's platform
         function updateSearchFields() {
-            const activeSession = document.getElementById('autoActiveSession').value;
+            // Since we removed the account dropdowns from other tabs, this function is simplified
             const hashtagField = document.getElementById('hashtagField');
             const keywordsField = document.getElementById('keywordsField');
             const hashtagHelp = document.getElementById('hashtagHelp');
             
-            if (!activeSession) {
-                // No account selected - show hashtag field by default
-                if (hashtagField) hashtagField.style.display = 'block';
-                if (keywordsField) keywordsField.style.display = 'none';
-                if (hashtagHelp) hashtagHelp.textContent = 'Search for posts with these hashtags';
-                return;
-            }
-            
-            // Get platform from session data
-            let platform = 'instagram'; // default
-            try {
-                const sessionData = localStorage.getItem(`session_${activeSession}`);
-                if (sessionData) {
-                    const parsed = JSON.parse(sessionData);
-                    platform = parsed.platform || 'instagram';
-                }
-            } catch (error) {
-                console.log('Could not get platform from session data, using default');
-            }
-            
-            // Update field visibility based on platform (Threads only)
+            // Show hashtag field by default for Threads
             if (hashtagField) hashtagField.style.display = 'block';
             if (keywordsField) keywordsField.style.display = 'none';
             if (hashtagHelp) hashtagHelp.textContent = 'Search for posts containing this text';
@@ -1323,38 +1519,222 @@
             return true;
         }
 
-        // Event listeners
-        document.getElementById('useAI').addEventListener('change', updateUI);
-        document.getElementById('loginBtn').addEventListener('click', login);
-        document.getElementById('logoutBtn').addEventListener('click', logout);
-        document.getElementById('clearAllBtn').addEventListener('click', clearAllSessions);
-        document.getElementById('autoActiveSession').addEventListener('change', updateSearchFields);
-        
-        // Auto-check status when session dropdown changes
-        document.getElementById('activeSession').addEventListener('change', function() {
-            const selectedSession = this.value;
-            if (selectedSession) {
-                checkSession(selectedSession);
-            } else {
-                checkAllSessions();
-            }
+        // Consolidated event listener setup
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🎯 DOM Content Loaded - setting up ALL event listeners');
+            
+            // Setup main event listeners
+            setupMainEventListeners();
+            
+            // Setup sequencer event listeners
+            setupSequencerListeners();
+            
+            console.log('🎯 All event listeners setup complete');
         });
-        
-        // Add debugging to run button
-        const runBtn = document.getElementById('runBtn');
-        if (runBtn) {
-            console.log('🎯 WEB UI: Run button found, adding event listener');
-            runBtn.addEventListener('click', () => {
-                console.log('🎯 WEB UI: Run button clicked!');
-                runAction();
-            });
-        } else {
-            console.error('🎯 WEB UI: Run button not found!');
+
+        // Setup main event listeners
+        function setupMainEventListeners() {
+            console.log('🎯 Setting up main event listeners');
+            
+            // Login and session management
+            const loginBtn = document.getElementById('loginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            const useAI = document.getElementById('useAI');
+
+            const activeSession = document.getElementById('activeSession');
+            
+            if (loginBtn) {
+                console.log('🎯 Login button found, adding listener');
+                loginBtn.addEventListener('click', login);
+            } else {
+                console.log('❌ Login button not found!');
+            }
+            
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', logout);
+            }
+            
+            if (clearAllBtn) {
+                clearAllBtn.addEventListener('click', clearAllSessions);
+            }
+            
+            if (useAI) {
+                useAI.addEventListener('change', updateUI);
+            }
+            
+
+            
+            if (activeSession) {
+                activeSession.addEventListener('change', function() {
+                    const selectedSession = this.value;
+                    if (selectedSession) {
+                        checkSession(selectedSession);
+                    } else {
+                        checkAllSessions();
+                    }
+                });
+            }
         }
 
 
 
 
+
+        // Auto Posting Management
+        let autoPostingInterval = null;
+        let autoPostingActive = false;
+        let postsCreated = 0;
+        let maxPostsToCreate = 10;
+
+        function updatePostingUI() {
+            // Since we removed account dropdowns, this function is simplified
+            console.log('🎯 Update posting UI called');
+        }
+
+        function startAutoPosting() {
+            // Get the first available session from localStorage
+            const sessions = Object.keys(localStorage).filter(key => key.startsWith('session_'));
+            if (sessions.length === 0) {
+                updatePostingStatus('Please login first to create a session', 'error');
+                return;
+            }
+            const activeSession = sessions[0]; // Use the first available session
+
+            // Use default values since these elements were removed from the Posts tab
+            const interval = 60; // Default 60 minutes
+            const maxPosts = 5; // Default 5 posts
+            const unlimitedPosts = false; // Default to limited
+            const useMedia = document.getElementById('useMedia')?.checked || false;
+            const mediaFolder = document.getElementById('mediaFolder')?.value || '';
+            const headful = false; // Default to headless
+
+            if (interval < 5 || interval > 1440) {
+                updatePostingStatus('Interval must be between 5 and 1440 minutes', 'error');
+                return;
+            }
+
+            if (!unlimitedPosts && (maxPosts < 1 || maxPosts > 100)) {
+                updatePostingStatus('Maximum posts must be between 1 and 100', 'error');
+                return;
+            }
+
+            if (useMedia && !mediaFolder.trim()) {
+                updatePostingStatus('Please specify a media folder path when using media', 'error');
+                return;
+            }
+
+            // Start auto posting
+            autoPostingActive = true;
+            postsCreated = 0;
+            maxPostsToCreate = unlimitedPosts ? Infinity : maxPosts;
+
+            // Update UI
+            document.getElementById('startPostingBtn').style.display = 'none';
+            document.getElementById('stopPostingBtn').style.display = 'inline-block';
+            updatePostingStatus(`🚀 Auto posting started - will post every ${interval} minutes`, 'success');
+
+            // Create first post immediately
+            createAndPostContent(activeSession, useMedia, mediaFolder, headful);
+
+            // Set up interval for subsequent posts
+            autoPostingInterval = setInterval(() => {
+                if (!autoPostingActive) return;
+                
+                if (postsCreated >= maxPostsToCreate) {
+                    stopAutoPosting();
+                    updatePostingStatus(`✅ Auto posting completed - ${postsCreated} posts created`, 'success');
+                    return;
+                }
+
+                createAndPostContent(activeSession, useMedia, mediaFolder, headful);
+            }, interval * 60 * 1000); // Convert minutes to milliseconds
+        }
+
+        function stopAutoPosting() {
+            autoPostingActive = false;
+            if (autoPostingInterval) {
+                clearInterval(autoPostingInterval);
+                autoPostingInterval = null;
+            }
+
+            // Update UI
+            document.getElementById('startPostingBtn').style.display = 'inline-block';
+            document.getElementById('stopPostingBtn').style.display = 'none';
+            updatePostingStatus(`⏹️ Auto posting stopped - ${postsCreated} posts created`, 'info');
+        }
+
+        async function createAndPostContent(activeSession, useMedia, mediaFolder, headful) {
+            try {
+                updatePostingStatus(`📝 Creating post ${postsCreated + 1}...`, 'loading');
+
+                // Get platform and session info
+                let platform = 'threads';
+                let username = null;
+                let password = null;
+                let assistantId = null;
+
+                try {
+                    const sessionData = localStorage.getItem(`session_${activeSession}`);
+                    if (sessionData) {
+                        const parsed = JSON.parse(sessionData);
+                        platform = parsed.platform || 'threads';
+                        username = parsed.username;
+                        password = parsed.password;
+                        assistantId = parsed.assistantId;
+                    }
+                } catch (error) {
+                    console.log('Could not retrieve session data:', error);
+                }
+
+                if (!assistantId) {
+                    updatePostingStatus('❌ No assistant ID found for this account', 'error');
+                    return;
+                }
+
+                // Prepare the request payload
+                const payload = {
+                    action: 'auto-post',
+                    platform: platform,
+                    sessionName: activeSession.split('_').slice(1).join('_'),
+                    username: username,
+                    password: password,
+                    assistantId: assistantId,
+                    useMedia: useMedia,
+                    mediaFolder: mediaFolder,
+                    headful: headful
+                };
+
+                console.log('🎯 WEB UI: Sending auto-post request:', payload);
+
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.ok) {
+                    postsCreated++;
+                    updatePostingStatus(`✅ Post ${postsCreated} created successfully! ${result.message || ''}`, 'success');
+                } else {
+                    updatePostingStatus(`❌ Failed to create post: ${result.message}`, 'error');
+                }
+
+            } catch (error) {
+                updatePostingStatus(`❌ Error creating post: ${error.message}`, 'error');
+            }
+        }
+
+        function updatePostingStatus(message, type = 'info') {
+            const statusElement = document.getElementById('postingStatus');
+            statusElement.textContent = message;
+            statusElement.className = `status ${type}`;
+        }
+
+        // Auto-post event listeners - these elements were removed, so we'll skip them
+        console.log('🎯 Auto-post elements removed, skipping event listeners');
 
         // Initialize UI
         console.log('🎯 WEB UI: Page loaded, initializing UI...');
@@ -1456,12 +1836,16 @@
         }
 
         async function login() {
+            console.log('🎯 Login function called!');
+            
             const platform = document.getElementById('platform').value;
             const sessionName = document.getElementById('sessionName').value;
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             const assistantId = document.getElementById('assistantId').value;
             const headful = document.getElementById('headful').checked;
+            
+            console.log('🎯 Form values:', { platform, sessionName, username, assistantId, headful });
 
             if (!platform || !sessionName) {
                 updateSessionStatus('Please fill in platform and account name', 'error');
@@ -1500,12 +1884,8 @@
                     updateSessionDropdown();
                     updateSearchFields();
                     
-                    // Auto-select this session in the auto comment dropdown
-                    const autoDropdown = document.getElementById('autoActiveSession');
-                    if (autoDropdown) {
-                        autoDropdown.value = `${platform}_${sessionName}`;
-                        updateSearchFields(); // Update fields for the newly selected account
-                    }
+                    // Session saved successfully
+                    console.log('🎯 Session saved to localStorage');
                     
                     // Auto-check status after successful login
                     setTimeout(() => {
@@ -1515,6 +1895,7 @@
                     updateSessionStatus('Login failed: ' + result.message, 'error');
                 }
             } catch (error) {
+                console.error('🎯 Login error:', error);
                 updateSessionStatus('Error during login: ' + error.message, 'error');
             }
         }
@@ -1577,11 +1958,13 @@
             
             console.log('🎯 WEB UI: runAction called, active tab:', activeTab);
 
-            const activeSession = document.getElementById('autoActiveSession').value;
-            if (!activeSession) {
-                updateStatus('Please select an account to use', 'error');
+            // Get the first available session from localStorage
+            const sessions = Object.keys(localStorage).filter(key => key.startsWith('session_'));
+            if (sessions.length === 0) {
+                updateStatus('Please login first to create a session', 'error');
                 return;
             }
+            const activeSession = sessions[0]; // Use the first available session
 
             const action = 'auto-comment'; // Hardcoded to auto-comment functionality
             const hashtag = document.getElementById('hashtag').value.trim();
@@ -1704,6 +2087,531 @@
                 }, 15000);
             }
         }, 1000);
+
+        // Sequencer functionality
+        let sequenceActions = [];
+        let sequenceRunning = false;
+        let currentSequenceIndex = 0;
+        let currentActionExecution = 0; // Track current execution within an action
+        let sequenceInterval = null;
+
+        // Initialize sequencer
+        function initializeSequencer() {
+            updateSequencerSessionDropdown();
+            updateSequenceDisplay();
+        }
+
+        // Update sequencer session dropdown (now using login tab account)
+        function updateSequencerSessionDropdown() {
+            // Account is now determined by the login tab
+            return;
+        }
+
+        // Show add action modal
+        function showAddActionModal() {
+            console.log('🎯 Show modal called');
+            const modal = document.getElementById('addActionModal');
+            if (modal) {
+                console.log('🎯 Modal found, showing...');
+                modal.style.display = 'block';
+            } else {
+                console.log('❌ Modal not found!');
+            }
+        }
+
+        // Hide add action modal
+        function hideAddActionModal() {
+            const modal = document.getElementById('addActionModal');
+            modal.style.display = 'none';
+        }
+
+        // Add action to sequence from modal
+        function addActionToSequence() {
+            console.log('🎯 addActionToSequence called!');
+            const actionType = document.getElementById('modalActionType').value;
+            const actionCount = parseInt(document.getElementById('modalActionCount').value) || 1;
+            const actionDelay = parseInt(document.getElementById('modalActionDelay').value) || 5;
+
+            if (!actionType) {
+                updateSequencerStatus('Please select an action type', 'error');
+                return;
+            }
+
+            const action = {
+                id: Date.now() + Math.random(),
+                type: actionType,
+                count: actionCount,
+                delay: actionDelay,
+                settings: getActionSettings(actionType)
+            };
+
+            sequenceActions.push(action);
+            updateSequenceDisplay();
+            updateSequencerStatus(`Added ${actionType} action to sequence`, 'success');
+            hideAddActionModal();
+        }
+
+        // Get action settings based on type
+        function getActionSettings(actionType) {
+            const settings = {};
+            
+            if (actionType === 'comment') {
+                // Get settings from comments tab
+                settings.hashtag = document.getElementById('hashtag')?.value || '';
+                settings.keywords = document.getElementById('keywords')?.value || '';
+                settings.useAI = document.getElementById('useAI')?.checked || false;
+                settings.comment = document.getElementById('comment')?.value || '';
+                settings.likePost = document.getElementById('likePost')?.checked || false;
+            } else if (actionType === 'post') {
+                // Get settings from posts tab
+                settings.useMedia = document.getElementById('useMedia')?.checked || false;
+                settings.mediaFolder = document.getElementById('mediaFolder')?.value || '';
+            }
+
+            return settings;
+        }
+
+        // Update sequence display
+        function updateSequenceDisplay() {
+            const sequenceList = document.getElementById('sequenceList');
+            
+            if (sequenceActions.length === 0) {
+                sequenceList.innerHTML = '<p class="empty-message">No actions added yet. Add actions above to build your sequence.</p>';
+                return;
+            }
+
+            sequenceList.innerHTML = '';
+            
+            sequenceActions.forEach((action, index) => {
+                const actionElement = createActionElement(action, index + 1);
+                sequenceList.appendChild(actionElement);
+            });
+        }
+
+        // Create action element
+        function createActionElement(action, number) {
+            const div = document.createElement('div');
+            div.className = 'sequence-item';
+            div.dataset.actionId = action.id;
+
+            const actionTypeNames = {
+                'comment': 'Auto Comment',
+                'post': 'Auto Post',
+                'pause': 'Time Pause',
+                'loop': 'Loop'
+            };
+
+            const actionTypeClass = `action-type-${action.type}`;
+            const actionTypeName = actionTypeNames[action.type] || action.type;
+
+            div.innerHTML = `
+                <div class="sequence-item-info">
+                    <div class="sequence-item-title">
+                        <span class="action-type-badge ${actionTypeClass}">${actionTypeName}</span>
+                        ${action.count > 1 ? `${action.count} times` : 'Once'}
+                    </div>
+                    <div class="sequence-item-details">
+                        Delay: ${action.delay} minutes between executions
+                    </div>
+                </div>
+                <div class="sequence-item-actions">
+                    <div class="sequence-item-number">${number}</div>
+                    <button class="remove-action-btn" onclick="removeActionFromSequence('${action.id}')">Remove</button>
+                </div>
+            `;
+
+            return div;
+        }
+
+        // Remove action from sequence
+        function removeActionFromSequence(actionId) {
+            console.log('🎯 Remove action called with ID:', actionId, 'Type:', typeof actionId);
+            console.log('🎯 Current sequence actions:', sequenceActions);
+            
+            // Convert actionId to number for comparison since IDs are numbers
+            const numericActionId = parseFloat(actionId);
+            
+            const originalLength = sequenceActions.length;
+            sequenceActions = sequenceActions.filter(action => action.id !== numericActionId);
+            const newLength = sequenceActions.length;
+            
+            console.log('🎯 Filtered sequence actions:', sequenceActions);
+            console.log('🎯 Removed', originalLength - newLength, 'actions');
+            
+            updateSequenceDisplay();
+            updateSequencerStatus('Action removed from sequence', 'info');
+        }
+
+        // Start sequence
+        async function startSequence() {
+            // Prevent multiple sequences from running
+            if (sequenceRunning) {
+                console.log('🎯 Sequence already running, ignoring start request');
+                updateSequencerStatus('Sequence is already running', 'info');
+                return;
+            }
+            
+            // Get the first available session from localStorage
+            const sessions = Object.keys(localStorage).filter(key => key.startsWith('session_'));
+            if (sessions.length === 0) {
+                updateSequencerStatus('Please login first to create a session', 'error');
+                return;
+            }
+            const activeSession = sessions[0]; // Use the first available session
+
+            if (sequenceActions.length === 0) {
+                updateSequencerStatus('Please add actions to the sequence first', 'error');
+                return;
+            }
+
+            console.log('🎯 Starting new sequence with', sequenceActions.length, 'actions');
+            sequenceRunning = true;
+            currentSequenceIndex = 0;
+            currentActionExecution = 0; // Reset execution counter
+            
+            // Update UI
+            document.getElementById('startSequenceBtn').style.display = 'none';
+            document.getElementById('stopSequenceBtn').style.display = 'inline-block';
+            
+            updateSequencerStatus('🚀 Starting sequence...', 'loading');
+            
+            // Start executing actions
+            executeNextAction(activeSession);
+        }
+
+        // Stop sequence
+        function stopSequence() {
+            sequenceRunning = false;
+            if (sequenceInterval) {
+                clearTimeout(sequenceInterval);
+                sequenceInterval = null;
+            }
+            
+            // Update UI
+            document.getElementById('startSequenceBtn').style.display = 'inline-block';
+            document.getElementById('stopSequenceBtn').style.display = 'none';
+            
+            updateSequencerStatus('⏹️ Sequence stopped', 'info');
+        }
+
+        // Execute next action in sequence
+        async function executeNextAction(activeSession) {
+            // Check if sequence should stop
+            if (!sequenceRunning) {
+                console.log(`🎯 Sequence stopped by user`);
+                return;
+            }
+            
+            // Check if we've completed all actions
+            if (currentSequenceIndex >= sequenceActions.length) {
+                console.log(`🎯 Sequence completed: All actions finished (${currentSequenceIndex}/${sequenceActions.length})`);
+                updateSequencerStatus('✅ Sequence completed successfully! All actions finished.', 'success');
+                stopSequence();
+                return;
+            }
+
+            const action = sequenceActions[currentSequenceIndex];
+            
+            // Check if we need to execute this action more times
+            if (currentActionExecution < action.count) {
+                console.log(`🎯 Sequencer: Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})`);
+                updateSequencerStatus(`🔄 Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})`, 'loading');
+                
+                // Log current sequence state for debugging
+                console.log(`🎯 Sequence state: index=${currentSequenceIndex}, execution=${currentActionExecution}, total actions=${sequenceActions.length}`);
+
+                try {
+                    console.log(`🎯 Sequencer: About to execute action:`, action);
+                    await executeAction(action, activeSession);
+                    
+                    // Increment execution counter
+                    currentActionExecution++;
+                    
+                    // If we still have more executions for this action, schedule the next one
+                    if (currentActionExecution < action.count) {
+                        const delayMs = action.delay * 60 * 1000; // Convert minutes to milliseconds
+                        
+                        updateSequencerStatus(`⏳ Next execution of ${action.type} in ${action.delay} minutes...`, 'info');
+                        
+                        sequenceInterval = setTimeout(() => {
+                            if (sequenceRunning) {
+                                executeNextAction(activeSession);
+                            }
+                        }, delayMs);
+                    } else {
+                        // Move to next action
+                        currentSequenceIndex++;
+                        currentActionExecution = 0; // Reset counter for next action
+                        
+                        if (sequenceRunning && currentSequenceIndex < sequenceActions.length) {
+                            // Schedule next action
+                            const nextAction = sequenceActions[currentSequenceIndex];
+                            const delayMs = nextAction.delay * 60 * 1000; // Convert minutes to milliseconds
+                            
+                            updateSequencerStatus(`⏳ Next action in ${nextAction.delay} minutes...`, 'info');
+                            
+                            sequenceInterval = setTimeout(() => {
+                                if (sequenceRunning) {
+                                    executeNextAction(activeSession);
+                                }
+                            }, delayMs);
+                        } else {
+                            // No more actions, sequence is complete
+                            console.log(`🎯 Sequence completed: No more actions to execute`);
+                            updateSequencerStatus('✅ Sequence completed successfully!', 'success');
+                            stopSequence();
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    updateSequencerStatus(`❌ Error executing action: ${error.message}`, 'error');
+                    stopSequence();
+                }
+            }
+        }
+
+        // Execute individual action
+        async function executeAction(action, activeSession) {
+            const headful = document.getElementById('sequencerHeadful').checked;
+            
+            // Get session data
+            let username = null;
+            let password = null;
+            let assistantId = null;
+            let platform = 'threads';
+            
+            try {
+                // activeSession is already the full localStorage key (e.g., "session_threads_the.council.room")
+                const sessionData = localStorage.getItem(activeSession);
+                if (sessionData) {
+                    const parsed = JSON.parse(sessionData);
+                    username = parsed.username;
+                    password = parsed.password;
+                    assistantId = parsed.assistantId;
+                    platform = parsed.platform || 'threads';
+                    console.log('🎯 Retrieved session data:', { username, assistantId, platform });
+                } else {
+                    console.log('❌ No session data found for:', activeSession);
+                }
+            } catch (error) {
+                console.log('Could not retrieve session data:', error);
+            }
+
+            if (action.type === 'comment') {
+                return await executeCommentAction(action, activeSession, username, password, assistantId, platform, headful);
+            } else if (action.type === 'post') {
+                return await executePostAction(action, activeSession, username, password, assistantId, platform, headful);
+            } else if (action.type === 'pause') {
+                return await executePauseAction(action);
+            } else if (action.type === 'loop') {
+                return await executeLoopAction(action);
+            }
+        }
+
+        // Execute comment action
+        async function executeCommentAction(action, activeSession, username, password, assistantId, platform, headful) {
+            console.log(`🎯 Executing comment action with count: ${action.count}, settings:`, action.settings);
+            
+            const payload = {
+                action: 'auto-comment',
+                platform: platform,
+                sessionName: activeSession.split('_').slice(2).join('_'), // Remove 'session' and platform prefix
+                username: username,
+                password: password,
+                assistantId: assistantId,
+                searchCriteria: action.settings,
+                maxPosts: action.count || 1, // Use action.count from sequencer, default to 1
+                useAI: action.settings.useAI,
+                comment: action.settings.comment,
+                likePost: action.settings.likePost,
+                headful: headful
+            };
+            
+            console.log(`🎯 Comment action payload:`, payload);
+
+            const response = await fetch('/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!result.ok) {
+                throw new Error(result.message);
+            }
+            
+            return result;
+        }
+
+        // Execute post action
+        async function executePostAction(action, activeSession, username, password, assistantId, platform, headful) {
+            const payload = {
+                action: 'auto-post',
+                platform: platform,
+                sessionName: activeSession.split('_').slice(2).join('_'), // Remove 'session' and platform prefix
+                username: username,
+                password: password,
+                assistantId: assistantId,
+                useMedia: action.settings.useMedia,
+                mediaFolder: action.settings.mediaFolder,
+                headful: headful
+            };
+
+            const response = await fetch('/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+            if (!result.ok) {
+                throw new Error(result.message);
+            }
+            
+            return result;
+        }
+
+        // Execute pause action
+        async function executePauseAction(action) {
+            return new Promise(resolve => {
+                setTimeout(resolve, action.delay * 60 * 1000);
+            });
+        }
+
+        // Execute loop action
+        async function executeLoopAction(action) {
+            // For now, just return success - loop logic can be implemented later
+            return { ok: true, message: 'Loop action executed' };
+        }
+
+        // Clear sequence
+        function clearSequence() {
+            sequenceActions = [];
+            updateSequenceDisplay();
+            updateSequencerStatus('Sequence cleared', 'info');
+        }
+
+        // Update sequencer status
+        function updateSequencerStatus(message, type = 'info') {
+            const statusElement = document.getElementById('sequencerStatus');
+            statusElement.textContent = message;
+            statusElement.className = `status ${type}`;
+            
+            // Show browser notification for completion
+            if (type === 'success' && message.includes('completed')) {
+                showBrowserNotification('Sequence Complete', message);
+            }
+        }
+        
+        // Show browser notification
+        function showBrowserNotification(title, message) {
+            // Check if browser supports notifications
+            if (!('Notification' in window)) {
+                console.log('This browser does not support notifications');
+                return;
+            }
+            
+            // Check if permission is granted
+            if (Notification.permission === 'granted') {
+                new Notification(title, { body: message });
+            } else if (Notification.permission !== 'denied') {
+                // Request permission
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification(title, { body: message });
+                    }
+                });
+            }
+            
+            // Also show an alert as fallback
+            setTimeout(() => {
+                alert(`${title}\n\n${message}`);
+            }, 1000);
+        }
+
+
+
+        // Setup sequencer event listeners
+        function setupSequencerListeners() {
+            console.log('🎯 Setting up sequencer listeners');
+            
+            // Add action button - try multiple approaches
+            const addActionBtn = document.getElementById('addActionBtn');
+            if (addActionBtn) {
+                console.log('🎯 Add action button found, adding listeners');
+                
+                // Remove any existing listeners
+                addActionBtn.removeEventListener('click', showAddActionModal);
+                
+                // Add new listener
+                addActionBtn.addEventListener('click', function(e) {
+                    console.log('🎯 Add action button clicked!');
+                    e.preventDefault();
+                    showAddActionModal();
+                });
+                
+                // Also set onclick as backup
+                addActionBtn.onclick = function(e) {
+                    console.log('🎯 Add action button onclick triggered!');
+                    e.preventDefault();
+                    showAddActionModal();
+                };
+            } else {
+                console.log('❌ Add action button not found!');
+            }
+            
+            // Modal buttons
+            const modalAddBtn = document.getElementById('modalAddActionBtn');
+            const modalCancelBtn = document.getElementById('modalCancelBtn');
+            const closeModalBtn = document.getElementById('closeActionModal');
+            
+            if (modalAddBtn) {
+                // Remove existing listener to prevent duplicates
+                modalAddBtn.removeEventListener('click', addActionToSequence);
+                modalAddBtn.addEventListener('click', addActionToSequence);
+            }
+            if (modalCancelBtn) {
+                // Remove existing listener to prevent duplicates
+                modalCancelBtn.removeEventListener('click', hideAddActionModal);
+                modalCancelBtn.addEventListener('click', hideAddActionModal);
+            }
+            if (closeModalBtn) {
+                // Remove existing listener to prevent duplicates
+                closeModalBtn.removeEventListener('click', hideAddActionModal);
+                closeModalBtn.addEventListener('click', hideAddActionModal);
+            }
+            
+            // Start sequence button
+            const startBtn = document.getElementById('startSequenceBtn');
+            if (startBtn) {
+                startBtn.addEventListener('click', startSequence);
+            }
+            
+            // Stop sequence button
+            const stopBtn = document.getElementById('stopSequenceBtn');
+            if (stopBtn) {
+                stopBtn.addEventListener('click', stopSequence);
+            }
+            
+            // Clear sequence button
+            const clearBtn = document.getElementById('clearSequenceBtn');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', clearSequence);
+            }
+            
+            // Close modal when clicking outside
+            window.addEventListener('click', function(event) {
+                const modal = document.getElementById('addActionModal');
+                if (event.target === modal) {
+                    hideAddActionModal();
+                }
+            });
+            
+            // Initialize sequencer
+            initializeSequencer();
+        }
+
+
     </script>
 </body>
 </html>

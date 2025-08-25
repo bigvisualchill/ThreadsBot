@@ -5,11 +5,12 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import OpenAI from 'openai';
-import { 
-  ensureThreadsLoggedIn, 
-  threadsLike, 
-  threadsComment, 
-  discoverThreadsPosts 
+import {
+  ensureThreadsLoggedIn,
+  threadsLike,
+  threadsComment,
+  discoverThreadsPosts,
+  createThreadsPost
 } from './threads-functions.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
 
@@ -246,9 +247,19 @@ async function generateAIComment(postContent, assistantId) {
 
     const thread = await openai.beta.threads.create();
 
+    // Create JSON signal for comment generation
+    const commentSignal = {
+      "action": "generate_comment",
+      "platform": "threads",
+      "content_type": "comment_on_post",
+      "target_post_content": postContent
+    };
+
+    console.log('📤 Sending comment signal to assistant:', JSON.stringify(commentSignal, null, 2));
+
     await openai.beta.threads.messages.create(thread.id, {
       role: 'user',
-      content: `Generate a thoughtful, engaging comment for this social media post. The comment should be authentic, relevant to the content, and encourage positive interaction. Keep it under 200 characters. Here's the post content: "${postContent}"`
+      content: JSON.stringify(commentSignal)
     });
     
     const run = await openai.beta.threads.runs.create(thread.id, {
@@ -275,6 +286,108 @@ async function generateAIComment(postContent, assistantId) {
   } catch (error) {
     console.error('AI comment generation error:', error);
     throw new Error(`AI comment generation failed: ${error.message}`);
+  }
+}
+
+async function generateAIPost(prompt, assistantId) {
+  if (!openai || !assistantId) {
+    throw new Error('OpenAI client or assistant ID not available');
+  }
+
+  try {
+    console.log('🤖 Generating AI post...');
+
+    const thread = await openai.beta.threads.create();
+
+    // Create JSON signal for post generation
+    const postSignal = {
+      "action": "generate_post",
+      "platform": "threads",
+      "content_type": "text_only"
+    };
+
+    console.log('📤 Sending post signal to assistant:', JSON.stringify(postSignal, null, 2));
+
+    await openai.beta.threads.messages.create(thread.id, {
+      role: 'user',
+      content: JSON.stringify(postSignal)
+    });
+    
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: assistantId
+    });
+    
+    // Wait for the run to complete
+    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    while (runStatus.status === 'in_progress' || runStatus.status === 'queued') {
+      await sleep(1000);
+      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    }
+    
+    if (runStatus.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(thread.id);
+      const lastMessage = messages.data[0];
+      const post = lastMessage.content[0].text.value.trim();
+      
+      console.log(`🤖 AI post generated: "${post}"`);
+      return post;
+    } else {
+      throw new Error(`AI generation failed with status: ${runStatus.status}`);
+    }
+  } catch (error) {
+    console.error('AI post generation error:', error);
+    throw new Error(`AI post generation failed: ${error.message}`);
+  }
+}
+
+async function generateAIPostWithMedia(mediaAnalysisPrompt, assistantId) {
+  if (!openai || !assistantId) {
+    throw new Error('OpenAI client or assistant ID not available');
+  }
+
+  try {
+    console.log('🤖 Generating AI post with media analysis...');
+
+    const thread = await openai.beta.threads.create();
+
+    // Create JSON signal for media-based post generation
+    const mediaPostSignal = {
+      "action": "generate_post_with_media",
+      "platform": "threads",
+      "content_type": "media_with_caption"
+    };
+
+    console.log('📤 Sending media post signal to assistant:', JSON.stringify(mediaPostSignal, null, 2));
+    
+    await openai.beta.threads.messages.create(thread.id, {
+      role: 'user',
+      content: JSON.stringify(mediaPostSignal)
+    });
+    
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: assistantId
+    });
+    
+    // Wait for the run to complete
+    let runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    while (runStatus.status === 'in_progress' || runStatus.status === 'queued') {
+      await sleep(1000);
+      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    }
+    
+    if (runStatus.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(thread.id);
+      const lastMessage = messages.data[0];
+      const caption = lastMessage.content[0].text.value.trim();
+      
+      console.log(`🤖 AI caption generated: "${caption}"`);
+      return caption;
+    } else {
+      throw new Error(`AI generation failed with status: ${runStatus.status}`);
+    }
+  } catch (error) {
+    console.error('AI media post generation error:', error);
+    throw new Error(`AI media post generation failed: ${error.message}`);
   }
 }
 
@@ -807,6 +920,8 @@ export async function runAction(options) {
     useAI = false,
     likePost = false,
     assistantId,
+    useMedia = false,
+    mediaFolder = '',
     progressSessionId,
     sendProgress,
   } = options;
@@ -833,11 +948,14 @@ export async function runAction(options) {
     if (!platform || platform !== 'threads') {
       throw new Error('Only Threads platform is supported');
     }
-    if (!action || !['login', 'auto-comment', 'check-session', 'logout'].includes(action)) {
+    if (!action || !['login', 'auto-comment', 'auto-post', 'check-session', 'logout'].includes(action)) {
       throw new Error('Invalid or missing action');
     }
     if (action === 'auto-comment' && !searchCriteria) {
       throw new Error('searchCriteria is required for auto-comment action');
+    }
+    if (action === 'auto-post' && !assistantId) {
+      throw new Error('assistantId is required for auto-post action');
     }
 
     // Report initial progress
@@ -1012,9 +1130,9 @@ export async function runAction(options) {
               : { keywords: searchCriteria })
           : searchCriteria;
       
-      // Discover posts
-      const posts = await discoverThreadsPosts(page, parsedCriteria, maxPosts * 3); // Get more posts to account for skips
-      console.log(`Found ${posts.length} Threads posts to process`);
+      // Discover posts - only get what we need plus a small buffer for skips
+      const posts = await discoverThreadsPosts(page, parsedCriteria, maxPosts + 2); // Get exactly what we need plus 2 for potential skips
+      console.log(`Found ${posts.length} Threads posts to process (target: ${maxPosts})`);
       
       if (posts.length === 0) {
         return { ok: false, message: 'No posts found matching search criteria' };
@@ -1030,7 +1148,13 @@ export async function runAction(options) {
       
       for (const postUrl of posts) {
           attempts++;
-        console.log(`\n🔄 [${attempts}/${posts.length}] Processing: ${postUrl}`);
+        console.log(`\n🔄 [${attempts}/${posts.length}] Processing: ${postUrl} (successes: ${successes}/${targetSuccesses})`);
+        
+        // Check if we've already reached our target
+        if (successes >= targetSuccesses) {
+          console.log(`🎯 Target already reached: ${successes}/${targetSuccesses} - skipping remaining posts`);
+          break;
+        }
         
         try {
           // Get post content for AI comment generation
@@ -1068,6 +1192,10 @@ export async function runAction(options) {
               console.log(`⏭️ SKIPPED: ${commentResult.reason}`);
               results.push({ url: postUrl, success: false, error: commentResult.reason });
             } else {
+              // Mark this post as commented to prevent future duplicates
+              console.log(`💾 Marking post as commented to prevent duplicates`);
+              await hasMyThreadsCommentAndCache({ page, username, postUrl, markCommented: true });
+              
               // Like the post if requested
               if (likePost) {
                 try {
@@ -1084,9 +1212,9 @@ export async function runAction(options) {
                 }
               }
               
-              results.push({ url: postUrl, success: true, comment: aiComment, liked: likePost });
+              results.push({ url: postUrl, success: true, comment: aiComment, liked: likePost, verified: commentResult.verified });
               successes++;
-              console.log(`✅ COMPLETED: Comment posted successfully (${successes}/${targetSuccesses})`);
+              console.log(`✅ COMPLETED: Comment posted successfully (${successes}/${targetSuccesses}) - Verified: ${commentResult.verified}`);
               
               // Report success progress
             reportProgress(`✅ Threads comment posted! (${successes}/${targetSuccesses})`, {
@@ -1097,11 +1225,12 @@ export async function runAction(options) {
           lastComment: aiComment.slice(0, 50) + '...',
           commentSuccess: true
         });
-              
-              // Check if we've reached our target
-              if (successes >= targetSuccesses) {
-                break;
-              }
+            }
+            
+            // Check if we've reached our target (moved outside the else block)
+            if (successes >= targetSuccesses) {
+              console.log(`🎯 Target reached: ${successes}/${targetSuccesses} comments posted - stopping`);
+              break;
             }
             
             // Shorter delay between posts for better efficiency
@@ -1122,6 +1251,116 @@ export async function runAction(options) {
           attempts
         };
       }
+
+    // Handle auto-post action
+    if (action === 'auto-post') {
+      if (!assistantId) {
+        throw new Error('Assistant ID is required for auto-posting');
+      }
+
+      // Load session first
+      const sessionLoaded = await loadSession(page, platform, sessionName);
+      
+      // Navigate to Threads and check if already logged in
+      await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
+      await sleep(2000);
+      
+      // Check if already logged in
+      const isLoggedIn = await page.evaluate(() => {
+        const loginForm = document.querySelector('form[action*="login"], input[type="password"], input[placeholder*="password"]');
+        const pageText = document.body.textContent || '';
+        const hasCreateButton = pageText.includes('Create');
+        const hasPostButton = pageText.includes('Post');
+        const hasLikeButton = pageText.includes('Like');
+        const hasReplyButton = pageText.includes('Reply');
+        
+        if (loginForm) {
+          return false;
+        }
+        
+        const hasAuthElements = hasCreateButton || hasPostButton || hasLikeButton || hasReplyButton;
+        return hasAuthElements;
+      });
+      
+      if (!isLoggedIn) {
+        console.log('Not logged in, attempting login...');
+        await ensureThreadsLoggedIn(page, { username, password });
+      } else {
+        console.log('Already logged in, proceeding with posting...');
+      }
+      
+      reportProgress('🤖 Generating AI content...', { current: 30, total: 100 });
+      
+      // Generate AI content for the post
+      let postContent;
+      let mediaFiles = [];
+      
+      if (useMedia && mediaFolder) {
+        // Handle media-based posting
+        try {
+          // Get media files from the folder
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          
+          const mediaFilesList = await fs.readdir(mediaFolder);
+          const supportedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.mp4', '.mov'];
+          
+          mediaFiles = mediaFilesList
+            .filter(file => supportedExtensions.includes(path.extname(file).toLowerCase()))
+            .map(file => path.join(mediaFolder, file));
+          
+          if (mediaFiles.length === 0) {
+            throw new Error('No supported media files found in the specified folder');
+          }
+          
+          // Select a random media file
+          const selectedMedia = mediaFiles[Math.floor(Math.random() * mediaFiles.length)];
+          const mediaFileName = path.basename(selectedMedia);
+          
+          console.log(`📸 Using media file: ${mediaFileName}`);
+          
+          // Create a JSON signal for the AI to analyze the media
+          const mediaAnalysisPrompt = {
+            type: 'media_analysis',
+            mediaFile: selectedMedia,
+            fileName: mediaFileName
+          };
+          
+          // Generate caption based on media
+          postContent = await generateAIPostWithMedia(mediaAnalysisPrompt, assistantId);
+          
+        } catch (error) {
+          console.error('Error handling media:', error);
+          throw new Error(`Media processing failed: ${error.message}`);
+        }
+              } else {
+          // Handle text-only posting
+          postContent = await generateAIPost('', assistantId);
+        }
+      
+      if (!postContent || postContent.trim().length === 0) {
+        throw new Error('Failed to generate post content');
+      }
+      
+      console.log(`📝 Generated post content: "${postContent}"`);
+      
+      reportProgress('📤 Creating post...', { current: 60, total: 100 });
+      
+      // Create the post
+      const postResult = await createThreadsPost(page, postContent, mediaFiles);
+      
+      if (postResult.success) {
+        reportProgress('✅ Post created successfully!', { current: 100, total: 100 });
+        return {
+          ok: true,
+          message: `Post created successfully: "${postContent.slice(0, 100)}..."`,
+          postContent: postContent,
+          mediaUsed: mediaFiles.length > 0 ? mediaFiles.length : 0
+        };
+      } else {
+        throw new Error(`Failed to create post: ${postResult.error || 'Unknown error'}`);
+      }
+    }
 
     return { ok: false, message: 'Unknown action' };
 

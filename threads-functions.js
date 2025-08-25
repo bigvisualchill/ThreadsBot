@@ -538,6 +538,14 @@ async function threadsComment(page, threadUrl, comment) {
   await page.goto(threadUrl, { waitUntil: 'networkidle2' });
   await sleep(1000);
   
+  // Take a screenshot before commenting for debugging
+  try {
+    await page.screenshot({ path: 'debug-before-comment.png', fullPage: true });
+    console.log('📸 Screenshot taken: debug-before-comment.png');
+  } catch (screenshotError) {
+    console.log('📸 Screenshot failed:', screenshotError.message);
+  }
+  
   // Look for reply/comment button
   const replySelectors = [
     '[aria-label="Reply"]',
@@ -595,6 +603,9 @@ async function threadsComment(page, threadUrl, comment) {
         await textarea.type(comment, { delay: 50 });
         console.log(`✅ Comment typed using selector: ${selector}`);
         
+        // Add a small delay after typing to ensure text is fully entered
+        await sleep(500);
+        
         // Look for submit button
         const submitSelectors = [
           'button[type="submit"]',
@@ -611,6 +622,8 @@ async function threadsComment(page, threadUrl, comment) {
               await submitButton.click();
               console.log(`✅ Comment submitted using selector: ${submitSelector}`);
               submitted = true;
+              // Add a delay after button click to prevent double submission
+              await sleep(1000);
               break;
             }
           } catch (error) {
@@ -618,19 +631,35 @@ async function threadsComment(page, threadUrl, comment) {
           }
         }
         
+        // Only try keyboard shortcut if button click failed
         if (!submitted) {
-          // Try keyboard shortcut
+          console.log('🔄 Button click failed, trying keyboard shortcut...');
+          // Add a small delay before keyboard shortcut
+          await sleep(500);
           await page.keyboard.down('Meta');
           await page.keyboard.press('Enter');
           await page.keyboard.up('Meta');
           console.log('✅ Comment submitted using Cmd+Enter');
+          submitted = true;
+        }
+        
+        // Verify that we actually submitted something
+        if (!submitted) {
+          console.log('❌ Failed to submit comment with any method');
+          throw new Error('Could not submit comment');
         }
         
         commented = true;
+        console.log(`✅ Comment process completed successfully with selector: ${selector}`);
         break;
       }
     } catch (error) {
       console.log(`Failed to use textarea selector ${selector}: ${error.message}`);
+      // If we've already commented successfully, don't try other selectors
+      if (commented) {
+        console.log(`✅ Already commented successfully, stopping selector loop`);
+        break;
+      }
     }
   }
   
@@ -639,8 +668,31 @@ async function threadsComment(page, threadUrl, comment) {
   }
   
   await sleep(2000); // Wait for comment to post
+  
+  // Take a screenshot after commenting for debugging
+  try {
+    await page.screenshot({ path: 'debug-after-comment.png', fullPage: true });
+    console.log('📸 Screenshot taken: debug-after-comment.png');
+  } catch (screenshotError) {
+    console.log('📸 Screenshot failed:', screenshotError.message);
+  }
+  
+  // Verify the comment was actually posted by checking for it on the page
+  console.log('🔍 Verifying comment was posted...');
+  const commentVerified = await page.evaluate((commentText) => {
+    const pageText = document.body.textContent || '';
+    // Check if our comment text appears on the page (case-insensitive)
+    return pageText.toLowerCase().includes(commentText.toLowerCase());
+  }, comment);
+  
+  if (commentVerified) {
+    console.log('✅ Comment verification successful - comment text found on page');
+  } else {
+    console.log('⚠️ Comment verification failed - comment text not found on page');
+  }
+  
   console.log('✅ Threads comment posted successfully');
-  return { success: true };
+  return { success: true, verified: commentVerified };
 }
 
 async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
@@ -685,10 +737,177 @@ async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
   return limitedPosts;
 }
 
+async function createThreadsPost(page, content, mediaFiles = []) {
+  console.log(`📝 Creating Threads post with content: "${content}"`);
+  
+  try {
+    // Navigate to Threads home page
+    await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
+    await sleep(2000);
+    
+    // Look for the compose/create post button
+    const composeSelectors = [
+      '[data-testid="create-button"]',
+      'button[aria-label*="Create"]',
+      'button[aria-label*="compose"]',
+      'button[aria-label*="post"]',
+      'svg[aria-label="Create"]',
+      'button:has-text("Create")',
+      'button:has-text("Post")'
+    ];
+    
+    let composeButton = null;
+    for (const selector of composeSelectors) {
+      try {
+        composeButton = await page.$(selector);
+        if (composeButton) {
+          console.log(`✅ Found compose button with selector: ${selector}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`Failed to find compose button with selector ${selector}: ${error.message}`);
+      }
+    }
+    
+    if (!composeButton) {
+      // Try clicking on any button that might be the compose button
+      const buttons = await page.$$('button');
+      for (const button of buttons) {
+        try {
+          const text = await button.evaluate(el => el.textContent || '');
+          if (text.toLowerCase().includes('create') || text.toLowerCase().includes('post')) {
+            await button.click();
+            console.log('✅ Clicked compose button by text content');
+            break;
+          }
+        } catch (error) {
+          console.log('Failed to click button:', error.message);
+        }
+      }
+    } else {
+      await composeButton.click();
+      console.log('✅ Clicked compose button');
+    }
+    
+    await sleep(2000); // Wait for compose modal to open
+    
+    // Look for the post textarea
+    const textareaSelectors = [
+      'textarea[placeholder*="Start a thread"]',
+      'textarea[placeholder*="What\'s happening"]',
+      'textarea[placeholder*="post"]',
+      'textarea[placeholder*="thread"]',
+      'div[contenteditable="true"]',
+      '[data-testid="post-textarea"]',
+      'textarea'
+    ];
+    
+    let textarea = null;
+    for (const selector of textareaSelectors) {
+      try {
+        textarea = await page.$(selector);
+        if (textarea) {
+          console.log(`✅ Found textarea with selector: ${selector}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`Failed to find textarea with selector ${selector}: ${error.message}`);
+      }
+    }
+    
+    if (!textarea) {
+      throw new Error('Could not find post textarea');
+    }
+    
+    // Type the content
+    await textarea.click();
+    await textarea.type(content, { delay: 50 });
+    console.log(`✅ Typed post content: "${content}"`);
+    
+    // Handle media upload if provided
+    if (mediaFiles && mediaFiles.length > 0) {
+      console.log(`📸 Uploading ${mediaFiles.length} media file(s)...`);
+      
+      // Look for file input
+      const fileInputSelectors = [
+        'input[type="file"]',
+        '[data-testid="media-input"]',
+        'input[accept*="image"]',
+        'input[accept*="video"]'
+      ];
+      
+      let fileInput = null;
+      for (const selector of fileInputSelectors) {
+        try {
+          fileInput = await page.$(selector);
+          if (fileInput) {
+            console.log(`✅ Found file input with selector: ${selector}`);
+            break;
+          }
+        } catch (error) {
+          console.log(`Failed to find file input with selector ${selector}: ${error.message}`);
+        }
+      }
+      
+      if (fileInput) {
+        // Upload the first media file (Threads typically supports one media file per post)
+        await fileInput.uploadFile(mediaFiles[0]);
+        console.log(`✅ Uploaded media file: ${mediaFiles[0]}`);
+        await sleep(2000); // Wait for upload to complete
+      } else {
+        console.log('⚠️ Could not find file input for media upload');
+      }
+    }
+    
+    // Look for the post button
+    const postSelectors = [
+      'button[type="submit"]',
+      '[data-testid="post-button"]',
+      'button[aria-label*="post"]',
+      'button:has-text("Post")',
+      'button:has-text("Share")'
+    ];
+    
+    let postButton = null;
+    for (const selector of postSelectors) {
+      try {
+        postButton = await page.$(selector);
+        if (postButton) {
+          console.log(`✅ Found post button with selector: ${selector}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`Failed to find post button with selector ${selector}: ${error.message}`);
+      }
+    }
+    
+    if (!postButton) {
+      // Try keyboard shortcut
+      await page.keyboard.down('Meta');
+      await page.keyboard.press('Enter');
+      await page.keyboard.up('Meta');
+      console.log('✅ Posted using Cmd+Enter');
+    } else {
+      await postButton.click();
+      console.log('✅ Clicked post button');
+    }
+    
+    await sleep(3000); // Wait for post to be created
+    
+    console.log('✅ Threads post created successfully');
+    return { success: true };
+    
+  } catch (error) {
+    console.error('❌ Error creating Threads post:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Export all functions
 export {
   ensureThreadsLoggedIn,
   threadsLike,
   threadsComment,
-  discoverThreadsPosts
+  discoverThreadsPosts,
+  createThreadsPost
 };

@@ -27,8 +27,15 @@ function saveCache(set) {
 let MEM_CACHE = loadCache();
 
 export function clearThreadsCommentCache() {
+  console.log('🗑️ Clearing Threads comment cache...');
   MEM_CACHE = new Set();
-  try { fs.unlinkSync(CACHE_PATH); } catch {}
+  try { 
+    fs.unlinkSync(CACHE_PATH); 
+    console.log('✅ Comment cache file deleted');
+  } catch (error) {
+    console.log('⚠️ Could not delete cache file:', error.message);
+  }
+  console.log('✅ Comment cache cleared');
 }
 export function getThreadsCommentCacheStats() {
   return {
@@ -60,6 +67,8 @@ function getThreadsPostId(url) {
 }
 
 async function getLoggedInThreadsHandle(page) {
+  console.log('🔍 Attempting to detect logged-in Threads handle...');
+  
   // Try to get handle from current page navigation
   const handleFromPage = await page.evaluate(() => {
     const results = {
@@ -107,6 +116,7 @@ async function getLoggedInThreadsHandle(page) {
   console.log(`🔍 Threads handle detection from page:`, handleFromPage);
 
   if (handleFromPage.foundHandle) {
+    console.log(`✅ Found handle: ${handleFromPage.foundHandle}`);
     return handleFromPage.foundHandle;
   }
 
@@ -114,7 +124,22 @@ async function getLoggedInThreadsHandle(page) {
 }
 
 async function findMyCommentOnThreadsPost(page, handle) {
+  console.log(`🔍 Scanning for comments by handle: ${handle}`);
+  
   return await page.evaluate((handle) => {
+    const results = {
+      found: false,
+      checked: 0,
+      matched: 0,
+      reason: "no-match",
+      debug: {
+        containers: [],
+        commentElements: [],
+        userLinks: [],
+        matches: []
+      }
+    };
+    
     // Try different selectors for the main post container - Threads specific
     const articleSelectors = [
       'main', // Threads uses main as primary container
@@ -132,16 +157,13 @@ async function findMyCommentOnThreadsPost(page, handle) {
       const el = document.querySelector(selector);
       if (el && !container) {
         container = el;
+        results.debug.containers.push(selector);
       }
     }
     
     if (!container) {
-      return { 
-        found: false, 
-        checked: 0, 
-        matched: 0, 
-        reason: "no-container"
-      };
+      results.reason = "no-container";
+      return results;
     }
 
     // Look for comment-like structures in Threads - more comprehensive
@@ -182,6 +204,8 @@ async function findMyCommentOnThreadsPost(page, handle) {
       }
     }
     
+    results.debug.commentElements = commentElements.length;
+    
     let matched = 0;
     
     for (let i = 0; i < Math.min(commentElements.length, 20); i++) {
@@ -208,6 +232,11 @@ async function findMyCommentOnThreadsPost(page, handle) {
           const match = href.match(/\/@([a-z0-9._]+)/i);
           if (match && match[1].toLowerCase() === handle.toLowerCase()) {
             isMatch = true;
+            results.debug.matches.push({
+              href: href,
+              handle: match[1],
+              text: element.textContent?.trim().slice(0, 100)
+            });
             break;
           }
         }
@@ -222,33 +251,45 @@ async function findMyCommentOnThreadsPost(page, handle) {
     if (matched === 0) {
       // Look for any links to the user anywhere on the page
       const allUserLinks = document.querySelectorAll(`a[href*="/@${handle}"], a[href*="@${handle}"]`);
+      results.debug.userLinks = allUserLinks.length;
       
       // Check if any of these links appear to be in comment contexts
       for (const link of allUserLinks) {
         const parentText = link.closest('div, span, li')?.textContent || '';
         if (parentText.length > 20) { // Likely a comment if there's substantial text
           matched++;
+          results.debug.matches.push({
+            href: link.href,
+            handle: handle,
+            text: parentText.slice(0, 100)
+          });
         }
       }
     }
 
-    return { 
-      found: matched > 0, 
-      checked: commentElements.length, 
-      matched, 
-      reason: matched ? "match" : "no-match"
-    };
+    results.found = matched > 0;
+    results.checked = commentElements.length;
+    results.matched = matched;
+    results.reason = matched ? "match" : "no-match";
+    
+    return results;
   }, handle);
 }
 
 async function expandThreadsComments(page, handle) {
+  console.log(`🔍 Expanding comments to check for existing comment by: ${handle}`);
+  
   // Quick check if we can already see our comment
   let result = await findMyCommentOnThreadsPost(page, handle);
-  if (result.found) return true;
+  console.log(`🔍 Initial scan result:`, result);
   
-  // DISABLED: Comment expansion to prevent clicking wrong buttons
+  if (result.found) {
+    console.log(`✅ Found existing comment by ${handle}`);
+    return true;
+  }
   
   // Light scroll to trigger lazy loading (safer than clicking buttons)
+  console.log(`🔍 Scrolling to load more comments...`);
   await page.evaluate(() => {
     window.scrollBy(0, 300);
   });
@@ -262,6 +303,7 @@ async function expandThreadsComments(page, handle) {
   
   // Final check after scrolling
   result = await findMyCommentOnThreadsPost(page, handle);
+  console.log(`🔍 Final scan result after scrolling:`, result);
   
   return result.found;
 }
@@ -274,14 +316,17 @@ export async function hasMyThreadsCommentAndCache({
   markCommented = false,
 }) {
   const postId = getThreadsPostId(postUrl);
+  console.log(`🔍 Checking for existing comment on post: ${postId}`);
   
   if (MEM_CACHE.has(postId)) {
+    console.log(`✅ Found in cache: Already commented on ${postId}`);
     return true;
   }
 
   // Only navigate if we're not already on the post page
   const currentUrl = page.url();
   if (!currentUrl.includes(postId)) {
+    console.log(`🔍 Navigating to post: ${postUrl}`);
     await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
     await sleep(2000); // Give Threads time to load
   }
@@ -290,15 +335,19 @@ export async function hasMyThreadsCommentAndCache({
   
   if (username && username.trim()) {
     handle = username.trim();
+    console.log(`🔍 Using provided username: ${handle}`);
   } else {
     try {
       handle = await getLoggedInThreadsHandle(page);
+      console.log(`🔍 Detected handle from page: ${handle}`);
     } catch (error) {
+      console.log(`❌ Could not detect handle: ${error.message}`);
       handle = null;
     }
   }
   
   if (!handle) {
+    console.log(`⚠️ No handle available, marking as commented to prevent duplicates`);
     if (markCommented) { 
       MEM_CACHE.add(postId); 
       saveCache(MEM_CACHE);
@@ -309,10 +358,12 @@ export async function hasMyThreadsCommentAndCache({
   const found = await expandThreadsComments(page, handle);
   
   if (found || markCommented) {
+    console.log(`💾 Adding to cache: ${postId}`);
     MEM_CACHE.add(postId);
     saveCache(MEM_CACHE);
   }
   
+  console.log(`🔍 Final result: ${found ? 'Found existing comment' : 'No existing comment found'}`);
   return found;
 }
 
