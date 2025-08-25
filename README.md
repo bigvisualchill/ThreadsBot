@@ -192,7 +192,17 @@ The bot automatically captures screenshots at key points:
 
 ### Common Issues & Solutions
 
-#### 1. "Could not find username field"
+#### 1. "Duplicate comments being posted" (FIXED)
+- **Cause**: Duplicate event handlers in sequencer causing double API calls
+- **Solution**: Fixed duplicate event handlers and improved comment submission logic
+- **Status**: ✅ Resolved in v2.1.0
+
+#### 2. "Sequence continues looping after completion" (FIXED)
+- **Cause**: Incorrect completion logic in sequencer
+- **Solution**: Added proper completion handling and browser notifications
+- **Status**: ✅ Resolved in v2.1.0
+
+#### 3. "Could not find username field"
 - **Cause**: Login page structure changed or navigation failed
 - **Solution**: Check `debug-after-login-navigation.png` to see actual page
 - **Fix**: The bot now uses direct navigation to `https://www.threads.com/login`
@@ -236,7 +246,15 @@ LOG_LEVEL=debug
 
 ## 🔧 Recent Fixes & Improvements
 
-### Latest Critical Fixes (August 2024)
+### Latest Critical Fixes (January 2025)
+- **✅ Duplicate Comments Fixed**: Resolved issue where bot was posting two comments per post
+- **✅ Sequencer Duplicate Execution**: Fixed duplicate event handlers causing double API calls
+- **✅ Sequence Completion Logic**: Added proper completion handling with browser notifications
+- **✅ Comment Detection Enhanced**: Improved comment detection with better logging and verification
+- **✅ Comment Submission Improved**: Added delays and verification to prevent double posting
+- **✅ Browser Notifications**: Added completion notifications and alerts for sequence status
+
+### Previous Critical Fixes (August 2024)
 - **✅ Assistant ID Retrieval**: Fixed assistant ID not being retrieved from session during auto-comment
 - **✅ Login Verification**: Improved login verification logic to match actual browser state
 - **✅ Logout Function**: Fixed logout to use Puppeteer methods instead of direct DOM access
@@ -255,11 +273,13 @@ LOG_LEVEL=debug
 - **✅ Reduced Network Calls**: Optimized API interactions and caching
 - **✅ Reliable Navigation**: Fixed domain consistency issues for better performance
 
-### Current Status (August 2024)
+### Current Status (January 2025)
 - **✅ Login System**: Fully functional with reliable verification
 - **✅ Session Management**: Robust session saving and loading
 - **✅ Assistant ID Integration**: Properly retrieves and uses OpenAI assistant ID
-- **✅ Auto-comment**: Working with AI-powered comment generation
+- **✅ Auto-comment**: Working with AI-powered comment generation (no duplicate comments)
+- **✅ Sequencer System**: Fixed duplicate execution and added completion notifications
+- **✅ Comment Detection**: Enhanced detection with comprehensive logging
 - **✅ Logout**: Clean logout with proper session cleanup
 - **✅ Error Handling**: Comprehensive error recovery and reporting
 
@@ -347,7 +367,15 @@ When reporting bugs, please include:
 
 ## 📈 Version History
 
-### v2.0.0 - Complete Overhaul (Latest)
+### v2.1.0 - Duplicate Comments & Sequencer Fixes (Latest)
+- ✅ **Duplicate Comments Fixed**: Resolved issue where bot posted two comments per post
+- ✅ **Sequencer Duplicate Execution**: Fixed duplicate event handlers causing double API calls
+- ✅ **Sequence Completion Logic**: Added proper completion handling with browser notifications
+- ✅ **Comment Detection Enhanced**: Improved detection with better logging and verification
+- ✅ **Comment Submission Improved**: Added delays and verification to prevent double posting
+- ✅ **Browser Notifications**: Added completion notifications and alerts for sequence status
+
+### v2.0.0 - Complete Overhaul
 - ✅ **Major Bug Fixes**: Resolved critical syntax and login issues
 - ✅ **Architecture Redesign**: Clean separation of concerns
 - ✅ **Enhanced Debugging**: Comprehensive screenshot and logging system
@@ -384,3 +412,4 @@ This project is private and proprietary. All rights reserved.
 
 *Last updated: January 2025*
 *Repository: https://github.com/bigvisualchill/ThreadsBot.git*
+*Latest Version: v2.1.0 - Duplicate Comments & Sequencer Fixes*
