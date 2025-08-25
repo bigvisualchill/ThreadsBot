@@ -10,6 +10,7 @@ import {
   threadsLike,
   threadsComment,
   discoverThreadsPosts,
+  discoverThreadsForYouPosts,
   createThreadsPost
 } from './threads-functions.js';
 import { hasMyThreadsCommentAndCache, clearThreadsCommentCache, getThreadsCommentCacheStats, hasMyThreadsLike } from './utils/threadsHasMyComment.js';
@@ -18,6 +19,143 @@ puppeteer.use(StealthPlugin());
 
 // cross-runtime sleep (works in any Puppeteer version)
 export const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+// Text processing function to clean AI-generated content
+function processAIText(text) {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+  
+  let processed = text;
+  
+  // Replace em dashes (—) with commas
+  processed = processed.replace(/—/g, ',');
+  
+  // Replace en dashes (–) with commas
+  processed = processed.replace(/–/g, ',');
+  
+  // Clean up multiple consecutive commas
+  processed = processed.replace(/,+/g, ',');
+  
+  // Remove leading/trailing commas
+  processed = processed.replace(/^,+|,+$/g, '');
+  
+  // Clean up spaces around commas
+  processed = processed.replace(/\s*,\s*/g, ', ');
+  
+  console.log(`🔧 Text processed: "${text}" → "${processed}"`);
+  
+  return processed;
+}
+
+// Content filtering function to check if post should be skipped
+async function shouldSkipPost(page, postUrl) {
+  try {
+    console.log(`🔍 Checking if post should be skipped: ${postUrl}`);
+    
+    // Navigate to the post
+    await page.goto(postUrl, { waitUntil: 'networkidle2' });
+    await sleep(2000); // Wait for content to load
+    
+    // Check for video content
+    const hasVideo = await page.evaluate(() => {
+      // Look for video elements
+      const videoElements = document.querySelectorAll('video');
+      if (videoElements.length > 0) {
+        console.log(`🎥 Found ${videoElements.length} video element(s)`);
+        return true;
+      }
+      
+      // Look for video-related attributes and classes
+      const videoSelectors = [
+        '[data-testid*="video"]',
+        '[aria-label*="video"]',
+        '[class*="video"]',
+        '[class*="Video"]',
+        'div[role="video"]',
+        'div[data-video]',
+        'div[data-media-type="video"]'
+      ];
+      
+      for (const selector of videoSelectors) {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          console.log(`🎥 Found video content with selector: ${selector}`);
+          return true;
+        }
+      }
+      
+      // Look for play button indicators
+      const playButtons = document.querySelectorAll('[aria-label*="play"], [aria-label*="Play"], [data-testid*="play"]');
+      if (playButtons.length > 0) {
+        console.log(`🎥 Found play button(s), likely video content`);
+        return true;
+      }
+      
+      return false;
+    });
+    
+    if (hasVideo) {
+      console.log(`⏭️ SKIP: Post contains video content`);
+      return { skip: true, reason: 'Video content detected' };
+    }
+    
+    // Get post text content
+    const postText = await page.evaluate(() => {
+      // Look for main post content
+      const contentSelectors = [
+        'div[dir="auto"]',
+        'span[dir="auto"]',
+        'article div',
+        'article span',
+        '[data-testid*="post"] div',
+        '[data-testid*="post"] span'
+      ];
+      
+      let allText = '';
+      for (const selector of contentSelectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const el of elements) {
+          const text = el.textContent?.trim() || '';
+          if (text.length > 10 && text.includes(' ')) {
+            allText += text + ' ';
+          }
+        }
+      }
+      
+      return allText.trim();
+    });
+    
+    if (!postText) {
+      console.log(`⏭️ SKIP: No text content found`);
+      return { skip: true, reason: 'No text content' };
+    }
+    
+    // Remove hashtags from word count
+    const textWithoutHashtags = postText.replace(/#\w+/g, '').trim();
+    
+    // Count words (excluding hashtags)
+    const words = textWithoutHashtags.split(/\s+/).filter(word => word.length > 0);
+    const wordCount = words.length;
+    
+    console.log(`📝 Post text: "${postText.slice(0, 100)}..."`);
+    console.log(`📝 Text without hashtags: "${textWithoutHashtags.slice(0, 100)}..."`);
+    console.log(`📊 Word count (excluding hashtags): ${wordCount}`);
+    
+    if (wordCount < 5) {
+      console.log(`⏭️ SKIP: Less than 5 words (${wordCount} words)`);
+      return { skip: true, reason: `Less than 5 words (${wordCount} words)` };
+    }
+    
+    console.log(`✅ Post passed content filter (${wordCount} words, no video)`);
+    return { skip: false, reason: 'Content filter passed' };
+    
+  } catch (error) {
+    console.log(`⚠️ Error checking post content: ${error.message}`);
+    // If we can't check, don't skip the post
+    return { skip: false, reason: 'Error checking content' };
+  }
+}
 
 // Clean up browsers on process exit
 process.on('SIGINT', async () => {
@@ -276,7 +414,10 @@ async function generateAIComment(postContent, assistantId) {
     if (runStatus.status === 'completed') {
       const messages = await openai.beta.threads.messages.list(thread.id);
       const lastMessage = messages.data[0];
-      const comment = lastMessage.content[0].text.value.trim();
+      const rawComment = lastMessage.content[0].text.value.trim();
+      
+      // Process the AI-generated comment
+      const comment = processAIText(rawComment);
       
       console.log(`🤖 AI comment generated: "${comment}"`);
       return comment;
@@ -327,7 +468,10 @@ async function generateAIPost(prompt, assistantId) {
     if (runStatus.status === 'completed') {
       const messages = await openai.beta.threads.messages.list(thread.id);
       const lastMessage = messages.data[0];
-      const post = lastMessage.content[0].text.value.trim();
+      const rawPost = lastMessage.content[0].text.value.trim();
+      
+      // Process the AI-generated post
+      const post = processAIText(rawPost);
       
       console.log(`🤖 AI post generated: "${post}"`);
       return post;
@@ -378,7 +522,10 @@ async function generateAIPostWithMedia(mediaAnalysisPrompt, assistantId) {
     if (runStatus.status === 'completed') {
       const messages = await openai.beta.threads.messages.list(thread.id);
       const lastMessage = messages.data[0];
-      const caption = lastMessage.content[0].text.value.trim();
+      const rawCaption = lastMessage.content[0].text.value.trim();
+      
+      // Process the AI-generated caption
+      const caption = processAIText(rawCaption);
       
       console.log(`🤖 AI caption generated: "${caption}"`);
       return caption;
@@ -1124,14 +1271,32 @@ export async function runAction(options) {
       reportProgress('🔍 Discovering posts...', { current: 30, total: 100 });
       
       // Parse search criteria
-        const parsedCriteria = typeof searchCriteria === 'string' 
-          ? (searchCriteria.startsWith('#') 
-              ? { hashtag: searchCriteria } 
-              : { keywords: searchCriteria })
-          : searchCriteria;
+      let parsedCriteria;
+      if (typeof searchCriteria === 'string') {
+        // Legacy format support
+        parsedCriteria = searchCriteria.startsWith('#') 
+          ? { hashtag: searchCriteria } 
+          : { keywords: searchCriteria };
+      } else {
+        // New format with source parameter
+        if (searchCriteria.source === 'search' && searchCriteria.searchTerm) {
+          parsedCriteria = { keywords: searchCriteria.searchTerm };
+        } else {
+          parsedCriteria = searchCriteria;
+        }
+      }
       
-      // Discover posts - only get what we need plus a small buffer for skips
-      const posts = await discoverThreadsPosts(page, parsedCriteria, maxPosts + 2); // Get exactly what we need plus 2 for potential skips
+      // Discover posts based on source
+      let posts;
+      if (parsedCriteria.source === 'foryou') {
+        // Use For You feed
+        console.log('🔍 Using For You feed for post discovery');
+        posts = await discoverThreadsForYouPosts(page, maxPosts + 2);
+      } else {
+        // Use search (default)
+        console.log('🔍 Using search for post discovery');
+        posts = await discoverThreadsPosts(page, parsedCriteria, maxPosts + 2);
+      }
       console.log(`Found ${posts.length} Threads posts to process (target: ${maxPosts})`);
       
       if (posts.length === 0) {
@@ -1157,8 +1322,16 @@ export async function runAction(options) {
         }
         
         try {
+          // Check if post should be skipped based on content filter
+          const skipCheck = await shouldSkipPost(page, postUrl);
+          if (skipCheck.skip) {
+            console.log(`⏭️ SKIP: ${skipCheck.reason}`);
+            results.push({ url: postUrl, success: false, error: skipCheck.reason });
+            continue;
+          }
+          
           // Get post content for AI comment generation
-            const postContent = await getPostContent(page, postUrl, platform);
+          const postContent = await getPostContent(page, postUrl, platform);
           if (!postContent || postContent.length < 10) {
             console.log(`⚠️ SKIP: No substantial content found`);
             results.push({ url: postUrl, success: false, error: 'No substantial content' });
@@ -1183,6 +1356,13 @@ export async function runAction(options) {
             } else {
               aiComment = comment;
               console.log(`💬 MANUAL COMMENT: "${aiComment}"`);
+            }
+            
+            // Skip if comment is empty
+            if (!aiComment || aiComment.trim() === '') {
+              console.log(`⏭️ SKIPPED: Empty comment - no content to post`);
+              results.push({ url: postUrl, success: false, error: 'Empty comment' });
+              continue;
             }
 
           // Post the comment

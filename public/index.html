@@ -1079,12 +1079,7 @@
                     <h3>Target Selection</h3>
                     
                     <div class="row">
-                        <div class="form-group" id="hashtagField">
-                            <label for="hashtag">Hashtag</label>
-                            <input type="text" id="hashtag" placeholder="#fitness #motivation">
-                            <small id="hashtagHelp">Search for posts with these hashtags</small>
-                        </div>
-                        <div class="form-group" id="keywordsField" style="display: none;">
+                        <div class="form-group" id="keywordsField">
                             <label for="keywords">Keywords</label>
                             <input type="text" id="keywords" placeholder="workout, gym, fitness">
                             <small>Search by keywords in post content</small>
@@ -1168,6 +1163,21 @@
                 </div>
 
                 <div class="section">
+                    <h3>Sequence Settings</h3>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="sequencerLoop">
+                            <label for="sequencerLoop">Loop entire sequence</label>
+                        </div>
+                        <div class="form-group" id="loopCountGroup" style="display: none;">
+                            <label for="sequencerLoopCount">Number of loops:</label>
+                            <input type="number" id="sequencerLoopCount" value="1" min="1" max="10">
+                            <small>How many times to repeat the entire sequence</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
                     <h3>Sequence Controls</h3>
                     <div class="button-group">
                         <button id="startSequenceBtn" class="btn btn-primary">🚀 Start Sequence</button>
@@ -1197,7 +1207,6 @@
                                 <option value="comment">Comments</option>
                                 <option value="post">Posts</option>
                                 <option value="pause">Time Pause</option>
-                                <option value="loop">Loop</option>
                             </select>
                         </div>
 
@@ -1211,6 +1220,41 @@
                                 <label for="modalActionDelay">Delay (minutes):</label>
                                 <input type="number" id="modalActionDelay" value="5" min="1" max="1440">
                                 <small>Delay between executions</small>
+                            </div>
+                        </div>
+
+                        <!-- Comment-specific settings -->
+                        <div id="commentSettings">
+                            <div class="form-group">
+                                <label for="modalCommentSource">Content Source:</label>
+                                <select id="modalCommentSource">
+                                    <option value="search">Search Posts</option>
+                                    <option value="foryou">For You Feed</option>
+                                </select>
+                                <small>Choose where to find posts to comment on</small>
+                            </div>
+                            
+                            <div id="searchTermGroup" class="form-group">
+                                <label for="modalSearchTerm">Search Term:</label>
+                                <input type="text" id="modalSearchTerm" placeholder="fitness, motivation, workout">
+                                <small>Enter keywords to search for posts</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="modalCommentText">Comment:</label>
+                                <textarea id="modalCommentText" rows="3" placeholder="Enter your comment..."></textarea>
+                                <small>Leave empty to use AI-generated comments</small>
+                            </div>
+                            
+                            <div class="checkbox-group">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="modalUseAI">
+                                    <span>Use AI-generated comments</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="modalLikePost">
+                                    <span>Like posts</span>
+                                </label>
                             </div>
                         </div>
 
@@ -2094,6 +2138,8 @@
         let currentSequenceIndex = 0;
         let currentActionExecution = 0; // Track current execution within an action
         let sequenceInterval = null;
+        let currentLoop = 0; // Track current loop iteration
+        let totalLoops = 1; // Total number of loops to perform
 
         // Initialize sequencer
         function initializeSequencer() {
@@ -2156,12 +2202,12 @@
             const settings = {};
             
             if (actionType === 'comment') {
-                // Get settings from comments tab
-                settings.hashtag = document.getElementById('hashtag')?.value || '';
-                settings.keywords = document.getElementById('keywords')?.value || '';
-                settings.useAI = document.getElementById('useAI')?.checked || false;
-                settings.comment = document.getElementById('comment')?.value || '';
-                settings.likePost = document.getElementById('likePost')?.checked || false;
+                // Get settings from modal fields
+                settings.source = document.getElementById('modalCommentSource')?.value || 'search';
+                settings.searchTerm = document.getElementById('modalSearchTerm')?.value || '';
+                settings.useAI = document.getElementById('modalUseAI')?.checked || false;
+                settings.comment = document.getElementById('modalCommentText')?.value || '';
+                settings.likePost = document.getElementById('modalLikePost')?.checked || false;
             } else if (actionType === 'post') {
                 // Get settings from posts tab
                 settings.useMedia = document.getElementById('useMedia')?.checked || false;
@@ -2264,7 +2310,12 @@
                 return;
             }
 
-            console.log('🎯 Starting new sequence with', sequenceActions.length, 'actions');
+            // Get loop settings
+            const loopEnabled = document.getElementById('sequencerLoop').checked;
+            totalLoops = loopEnabled ? parseInt(document.getElementById('sequencerLoopCount').value) || 1 : 1;
+            currentLoop = 0;
+            
+            console.log('🎯 Starting new sequence with', sequenceActions.length, 'actions, loops:', totalLoops);
             sequenceRunning = true;
             currentSequenceIndex = 0;
             currentActionExecution = 0; // Reset execution counter
@@ -2273,7 +2324,7 @@
             document.getElementById('startSequenceBtn').style.display = 'none';
             document.getElementById('stopSequenceBtn').style.display = 'inline-block';
             
-            updateSequencerStatus('🚀 Starting sequence...', 'loading');
+            updateSequencerStatus(`🚀 Starting sequence... (${totalLoops > 1 ? totalLoops + ' loops' : '1 loop'})`, 'loading');
             
             // Start executing actions
             executeNextAction(activeSession);
@@ -2286,6 +2337,10 @@
                 clearTimeout(sequenceInterval);
                 sequenceInterval = null;
             }
+            
+            // Reset loop variables
+            currentLoop = 0;
+            totalLoops = 1;
             
             // Update UI
             document.getElementById('startSequenceBtn').style.display = 'inline-block';
@@ -2304,18 +2359,34 @@
             
             // Check if we've completed all actions
             if (currentSequenceIndex >= sequenceActions.length) {
-                console.log(`🎯 Sequence completed: All actions finished (${currentSequenceIndex}/${sequenceActions.length})`);
-                updateSequencerStatus('✅ Sequence completed successfully! All actions finished.', 'success');
-                stopSequence();
-                return;
+                // Check if we should loop the sequence
+                currentLoop++;
+                if (currentLoop < totalLoops) {
+                    console.log(`🎯 Loop ${currentLoop}/${totalLoops} completed, starting next loop...`);
+                    updateSequencerStatus(`🔄 Loop ${currentLoop}/${totalLoops} completed, starting next loop...`, 'loading');
+                    
+                    // Reset for next loop
+                    currentSequenceIndex = 0;
+                    currentActionExecution = 0;
+                    
+                    // Continue with next loop
+                    executeNextAction(activeSession);
+                    return;
+                } else {
+                    console.log(`🎯 All loops completed: ${currentLoop}/${totalLoops}`);
+                    updateSequencerStatus(`✅ Sequence completed successfully! All ${totalLoops} loops finished.`, 'success');
+                    stopSequence();
+                    return;
+                }
             }
 
             const action = sequenceActions[currentSequenceIndex];
             
             // Check if we need to execute this action more times
             if (currentActionExecution < action.count) {
-                console.log(`🎯 Sequencer: Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})`);
-                updateSequencerStatus(`🔄 Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})`, 'loading');
+                const loopInfo = totalLoops > 1 ? ` (Loop ${currentLoop + 1}/${totalLoops})` : '';
+                console.log(`🎯 Sequencer: Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})${loopInfo}`);
+                updateSequencerStatus(`🔄 Executing action ${currentSequenceIndex + 1}/${sequenceActions.length}: ${action.type} (${currentActionExecution + 1}/${action.count})${loopInfo}`, 'loading');
                 
                 // Log current sequence state for debugging
                 console.log(`🎯 Sequence state: index=${currentSequenceIndex}, execution=${currentActionExecution}, total actions=${sequenceActions.length}`);
@@ -2403,8 +2474,6 @@
                 return await executePostAction(action, activeSession, username, password, assistantId, platform, headful);
             } else if (action.type === 'pause') {
                 return await executePauseAction(action);
-            } else if (action.type === 'loop') {
-                return await executeLoopAction(action);
             }
         }
 
@@ -2419,7 +2488,13 @@
                 username: username,
                 password: password,
                 assistantId: assistantId,
-                searchCriteria: action.settings,
+                searchCriteria: {
+                    source: action.settings.source,
+                    searchTerm: action.settings.searchTerm,
+                    useAI: action.settings.useAI,
+                    comment: action.settings.comment,
+                    likePost: action.settings.likePost
+                },
                 maxPosts: action.count || 1, // Use action.count from sequencer, default to 1
                 useAI: action.settings.useAI,
                 comment: action.settings.comment,
@@ -2478,15 +2553,13 @@
             });
         }
 
-        // Execute loop action
-        async function executeLoopAction(action) {
-            // For now, just return success - loop logic can be implemented later
-            return { ok: true, message: 'Loop action executed' };
-        }
+
 
         // Clear sequence
         function clearSequence() {
             sequenceActions = [];
+            currentLoop = 0;
+            totalLoops = 1;
             updateSequenceDisplay();
             updateSequencerStatus('Sequence cleared', 'info');
         }
@@ -2597,6 +2670,53 @@
             const clearBtn = document.getElementById('clearSequenceBtn');
             if (clearBtn) {
                 clearBtn.addEventListener('click', clearSequence);
+            }
+            
+            // Loop checkbox
+            const loopCheckbox = document.getElementById('sequencerLoop');
+            if (loopCheckbox) {
+                loopCheckbox.addEventListener('change', function() {
+                    const loopCountGroup = document.getElementById('loopCountGroup');
+                    if (this.checked) {
+                        loopCountGroup.style.display = 'block';
+                    } else {
+                        loopCountGroup.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Action type dropdown change handler
+            const modalActionType = document.getElementById('modalActionType');
+            if (modalActionType) {
+                // Set initial state based on default selection
+                const commentSettings = document.getElementById('commentSettings');
+                if (modalActionType.value === 'comment') {
+                    commentSettings.style.display = 'block';
+                } else {
+                    commentSettings.style.display = 'none';
+                }
+                
+                // Add change event listener
+                modalActionType.addEventListener('change', function() {
+                    if (this.value === 'comment') {
+                        commentSettings.style.display = 'block';
+                    } else {
+                        commentSettings.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Comment source dropdown change handler
+            const modalCommentSource = document.getElementById('modalCommentSource');
+            if (modalCommentSource) {
+                modalCommentSource.addEventListener('change', function() {
+                    const searchTermGroup = document.getElementById('searchTermGroup');
+                    if (this.value === 'search') {
+                        searchTermGroup.style.display = 'block';
+                    } else {
+                        searchTermGroup.style.display = 'none';
+                    }
+                });
             }
             
             // Close modal when clicking outside

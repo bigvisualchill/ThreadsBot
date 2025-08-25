@@ -535,6 +535,12 @@ async function threadsComment(page, threadUrl, comment) {
   console.log(`💬 Attempting to comment on Threads post: ${threadUrl}`);
   console.log(`Comment text: "${comment}"`);
   
+  // Prevent posting empty comments
+  if (!comment || comment.trim() === '') {
+    console.log('❌ Cannot post empty comment - skipping');
+    return { success: false, skipped: true, reason: 'Empty comment not allowed' };
+  }
+  
   await page.goto(threadUrl, { waitUntil: 'networkidle2' });
   await sleep(1000);
   
@@ -682,6 +688,10 @@ async function threadsComment(page, threadUrl, comment) {
   const commentVerified = await page.evaluate((commentText) => {
     const pageText = document.body.textContent || '';
     // Check if our comment text appears on the page (case-insensitive)
+    // Only verify if comment text is not empty
+    if (!commentText || commentText.trim() === '') {
+      return false; // Don't verify empty comments
+    }
     return pageText.toLowerCase().includes(commentText.toLowerCase());
   }, comment);
   
@@ -733,6 +743,38 @@ async function discoverThreadsPosts(page, searchCriteria, maxPosts = 10) {
   // Limit to requested number of posts
   const limitedPosts = postUrls.slice(0, maxPosts);
   console.log(`🧵 Returning ${limitedPosts.length} posts (limited to ${maxPosts})`);
+  
+  return limitedPosts;
+}
+
+async function discoverThreadsForYouPosts(page, maxPosts = 10) {
+  console.log(`🧵 Starting Threads For You feed discovery for ${maxPosts} posts`);
+  
+  // Navigate to Threads home page (For You feed)
+  await page.goto('https://www.threads.com/', { waitUntil: 'networkidle2' });
+  await sleep(3000); // Wait for feed to load
+  
+  // Extract post URLs from the For You feed
+  const postUrls = await page.evaluate(() => {
+    const links = document.querySelectorAll('a[href*="/post/"]');
+    const urls = [];
+    
+    links.forEach(link => {
+      const href = link.getAttribute('href');
+      if (href && href.includes('/post/')) {
+        const fullUrl = href.startsWith('http') ? href : `https://www.threads.net${href}`;
+        urls.push(fullUrl);
+      }
+    });
+    
+    return [...new Set(urls)]; // Remove duplicates
+  });
+  
+  console.log(`🧵 Found ${postUrls.length} potential Threads posts in For You feed`);
+  
+  // Limit to requested number of posts
+  const limitedPosts = postUrls.slice(0, maxPosts);
+  console.log(`🧵 Returning ${limitedPosts.length} posts from For You feed (limited to ${maxPosts})`);
   
   return limitedPosts;
 }
@@ -909,5 +951,6 @@ export {
   threadsLike,
   threadsComment,
   discoverThreadsPosts,
+  discoverThreadsForYouPosts,
   createThreadsPost
 };
